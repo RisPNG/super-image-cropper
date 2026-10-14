@@ -38,6 +38,38 @@ A powerful JavaScript image cropping library that supports GIF animations, PNG, 
 #### Static Image Cropping
 <img src="https://s4.ax1x.com/2022/02/23/bPUoIf.png" width="657" alt="Static Image Cropping Preview">
 
+## Fork development
+
+The `ris` branch contains the maintained editor integration. Keep `master` aligned with `STDSuperman/super-image-cropper` without adding fork changes there. Upstream updates are reviewed before incorporating them into `ris`.
+
+The repository root is the installable `super-image-cropper` package. Its exports point directly to the existing processor package, and the build includes the fork's GIF worker. Install and verify the native npm workspaces with:
+
+```sh
+mise install
+mise exec -- npm ci
+mise exec -- npm test
+mise exec -- npm run check
+```
+
+`crop()` accepts `outputWidth` and `outputHeight` separately from the source crop rectangle, so a selected area can be resized to exact output dimensions. Omit both to retain the crop's source dimensions. It also accepts an `AbortSignal` through `signal`; aborting or calling `destroy()` cancels preparation and releases its canvases, workers, and generated URLs. Source GIF frame delays, loop counts, frame disposal, and transparency are retained during processing. GIF encoding uses the fork's worker with a reserved transparent palette index, keeping opaque black separate from transparent pixels.
+
+Use `outputType: 'blob'` when preparing a file locally for later form submission. For example:
+
+```ts
+const cropper = new SuperImageCropper();
+const image = await cropper.crop({
+  src: localImageUrl,
+  cropperInstance,
+  outputWidth: 512,
+  outputHeight: 512,
+  signal: controller.signal,
+  outputType: 'blob',
+});
+cropper.destroy();
+```
+
+The package retains the original MIT licence and includes complete third-party notices in its published files and generated bundles.
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -129,6 +161,10 @@ imageCropper.crop({
 
 Crops an image based on the provided options.
 
+##### `destroy(): void`
+
+Cancels active processing and releases package-owned image buffers, canvases, GIF workers, and generated URLs. Call it when closing an editor or discarding its cropper instance.
+
 #### CropOptions
 
 | Property | Type | Required | Description |
@@ -137,6 +173,9 @@ Crops an image based on the provided options.
 | `crossOrigin` | `string` | No | CORS strategy for image loading |
 | `cropperInstance` | `Cropper` | No | CropperJS instance (when used with CropperJS) |
 | `cropperJsOpts` | `CropperJsOptions` | No | Manual cropping parameters |
+| `outputWidth` | `number` | No | Resized output width in pixels |
+| `outputHeight` | `number` | No | Resized output height in pixels |
+| `signal` | `AbortSignal` | No | Cancel active processing |
 | `gifJsOptions` | `object` | No | [gif.js](https://github.com/jnordberg/gif.js) configuration |
 | `outputType` | `'base64' \| 'blob' \| 'blobURL'` | No | Output format (default: `'blobURL'`) |
 
@@ -200,13 +239,14 @@ We welcome contributions! Please see our [Contributing Guide](../../CONTRIBUTING
 
 ```bash
 # Clone the repository
-git clone https://github.com/STDSuperman/super-image-cropper.git
+git clone --branch ris https://github.com/RisPNG/super-image-cropper.git
+cd super-image-cropper
 
 # Install dependencies
-pnpm install
+mise exec -- npm ci
 
 # Build the project
-pnpm build
+mise exec -- npm run build
 ```
 
 ### Project Structure

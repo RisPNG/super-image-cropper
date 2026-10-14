@@ -200,13 +200,14 @@ await cropper.crop({
 
 ```bash
 # 克隆仓库
-git clone https://github.com/STDSuperman/super-image-cropper.git
+git clone --branch ris https://github.com/RisPNG/super-image-cropper.git
+cd super-image-cropper
 
 # 安装依赖
-pnpm install
+mise exec -- npm ci
 
 # 构建项目
-pnpm build
+mise exec -- npm run build
 ```
 
 ### 项目结构

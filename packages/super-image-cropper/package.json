@@ -2,7 +2,7 @@
   "name": "super-image-cropper",
   "version": "1.0.27",
   "description": "A powerful JavaScript image cropping library that supports GIF animations, PNG, JPG and other formats with CropperJS integration. Perfect for web developers who need to crop animated GIFs while preserving animation quality.",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
   "module": "esm/index.js",
   "type": "module",
   "types": "esm/index.d.ts",
@@ -39,19 +39,24 @@
     "url": "https://github.com/STDSuperman/super-image-cropper/issues"
   },
   "exports": {
-    "import": {
-      "types": "./esm/index.d.ts",
-      "default": "./esm/index.js"
+    ".": {
+      "import": {
+        "types": "./esm/index.d.ts",
+        "default": "./esm/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      }
     },
-    "require": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "esm",
-    "package.json"
+    "package.json",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES"
   ],
   "repository": {
     "type": "git",
@@ -60,7 +65,7 @@
   "author": "STDSuperman <2750556766@qq.com>",
   "license": "MIT",
   "scripts": {
-    "clean": "rimraf dist",
+    "clean": "rimraf dist esm",
     "prebuild": "npm run clean",
     "build": "rollup -c",
     "dev": "tsc --watch",
@@ -68,7 +73,6 @@
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s"
   },
   "devDependencies": {
-    "@types/cropperjs": "^1.3.0",
     "@types/gif.js": "^0.2.2",
     "@types/minimist": "^1.2.2",
     "conventional-changelog-cli": "^2.2.2",
@@ -78,14 +82,13 @@
     "prettier": "^2.3.2",
     "rimraf": "^3.0.2",
     "tslib": "^2.4.1",
-    "typescript": "^4.4.2"
+    "typescript": "5.9.3"
   },
   "dependencies": {
-    "cropperjs": "^1.5.12",
-    "gif-build-worker-js": "workspace:*",
+    "cropperjs": "1.6.2",
+    "gif-build-worker-js": "1.0.3",
     "gif.js": "^0.2.0",
     "gifuct-js": "^2.1.2",
-    "image-type": "^4.1.0",
-    "rollup": "^4.24.0"
+    "image-type": "^4.1.0"
   }
 }

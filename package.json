@@ -1,21 +1,26 @@
 {
-  "repository": "git@github.com:STDSuperman/super-image-cropper.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RisPNG/super-image-cropper.git"
+  },
   "author": "STDSuperman <2750556766@qq.com>",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "scripts": {
-    "prepare": "husky install",
+    "prepare": "npm run build",
     "commit": "git add -A && git-cz",
     "lint": "eslint **/*.ts",
     "lint:fix": "eslint --fix **/*.ts",
     "format:fix": "prettier --write **/*.ts",
     "husky-pre-commit": "husky set .husky/_/pre-commit 'npm run test'",
     "husky-commit-msg": "husky set .husky/_/commit-msg 'npm run commitlint --edit $1'",
-    "clean": "turbo run clean",
-    "build": "turbo run build",
+    "clean": "npm run clean --workspaces",
+    "build": "npm run build --workspace=packages/gif-worker-js && npm run build --workspace=packages/super-image-cropper",
     "format": "prettier --check **/*.ts",
     "release": "tsx ./scripts/release",
-    "changelog": "turbo run changelog --filter=gif-worker-js"
+    "changelog": "turbo run changelog --filter=gif-worker-js",
+    "check": "npm run check --workspace=packages/super-image-cropper",
+    "test": "npm run build && node --test packages/*/test/*_test.mjs"
   },
   "devDependencies": {
     "@commitlint/cli": "^13.1.0",
@@ -45,7 +50,11 @@
     "tsx": "^3.12.1",
     "turbo": "^1.6.3",
     "type-fest": "^3.2.0",
-    "typescript": "^4.4.2"
+    "typescript": "5.9.3",
+    "rollup": "4.64.6",
+    "@rollup/plugin-commonjs": "29.0.3",
+    "@rollup/plugin-node-resolve": "16.0.3",
+    "rollup-plugin-typescript2": "0.37.0"
   },
   "config": {
     "commitizen": {
@@ -53,10 +62,38 @@
     }
   },
   "dependencies": {
-    "rollup": "^4.24.0",
-    "rollup-plugin-commonjs": "^10.1.0",
-    "rollup-plugin-delete": "^2.1.0",
-    "rollup-plugin-terser": "^7.0.2",
-    "rollup-plugin-typescript2": "^0.36.0"
-  }
+    "cropperjs": "1.6.2",
+    "gif.js": "0.2.0",
+    "gifuct-js": "2.1.2",
+    "image-type": "4.1.0"
+  },
+  "name": "super-image-cropper",
+  "version": "1.0.27",
+  "description": "A powerful JavaScript image cropping library that supports GIF animations, PNG, JPG and other formats with CropperJS integration. Perfect for web developers who need to crop animated GIFs while preserving animation quality.",
+  "type": "module",
+  "main": "./packages/super-image-cropper/dist/index.cjs",
+  "module": "./packages/super-image-cropper/esm/index.js",
+  "types": "./packages/super-image-cropper/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./packages/super-image-cropper/esm/index.d.ts",
+        "default": "./packages/super-image-cropper/esm/index.js"
+      },
+      "require": {
+        "types": "./packages/super-image-cropper/dist/index.d.ts",
+        "default": "./packages/super-image-cropper/dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "packages/super-image-cropper/dist",
+    "packages/super-image-cropper/esm",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES"
+  ],
+  "workspaces": [
+    "packages/*"
+  ]
 }

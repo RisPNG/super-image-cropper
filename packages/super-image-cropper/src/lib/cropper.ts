@@ -1,217 +1,105 @@
-import { ICommonCropOptions, ICropOpts } from '../index';
-import { ParsedFrame } from 'gifuct-js';
-import type { IParsedFrameInfo } from './decoder';
+import { decompressFrame } from 'gifuct-js';
+import type { ParsedGif, ParsedFrame } from 'gifuct-js';
+import type { ICommonCropOptions } from '../index';
 
 export interface IFrameCropperProps {
   commonCropOptions: ICommonCropOptions;
 }
 
 export class FrameCropper {
-  private frames!: ImageData[];
-  private parsedFrames!: ParsedFrame[];
+  public readonly outputCanvas = document.createElement('canvas');
+  private readonly compositeCanvas = document.createElement('canvas');
+  private readonly patchCanvas = document.createElement('canvas');
+  private readonly outputContext = this.outputCanvas.getContext('2d', {willReadFrequently: true})!;
+  private readonly compositeContext = this.compositeCanvas.getContext('2d', {willReadFrequently: true})!;
+  private readonly patchContext = this.patchCanvas.getContext('2d')!;
   private commonCropOptions!: ICommonCropOptions;
-  private convertorCanvas!: HTMLCanvasElement;
-  private containerCanvas!: HTMLCanvasElement;
-  private convertCtx!: CanvasRenderingContext2D;
-  private containerCtx!: CanvasRenderingContext2D;
-  private cropperJsOpts!: Required<ICropOpts>;
-  private offsetX = 0;
-  private offsetY = 0;
-  private containerCenterX = 0;
-  private containerCenterY = 0;
-  private resultFrames: ImageData[] = [];
+
   constructor(props: IFrameCropperProps) {
     this.init(props);
   }
 
-  public init({ commonCropOptions }: IFrameCropperProps) {
+  public init({commonCropOptions}: IFrameCropperProps): void {
     this.commonCropOptions = commonCropOptions;
-    this.cropperJsOpts = commonCropOptions.cropperJsOpts;
-    // 重置状态
-    this.resultFrames = [];
-    if (!this.containerCanvas || !this.convertorCanvas) {
-      this.setupCanvas();
-    }
-    this.setCanvasWH();
+    this.outputCanvas.width = commonCropOptions.outputWidth;
+    this.outputCanvas.height = commonCropOptions.outputHeight;
+    this.compositeCanvas.width = commonCropOptions.imageData.naturalWidth;
+    this.compositeCanvas.height = commonCropOptions.imageData.naturalHeight;
   }
 
-  public async cropGif(parsedFrameInfo: IParsedFrameInfo) {
-    const { frames, parsedFrames } = parsedFrameInfo;
-    this.frames = frames;
-    this.parsedFrames = parsedFrames;
-    let frameIdx = 0;
-    while (frameIdx < this.frames.length) {
-      const currentFrame = this.frames[frameIdx];
-      const currentFrameParseInfo = this.parsedFrames[frameIdx];
-      // disposalType 2 should clear canvas
-      if (currentFrameParseInfo.disposalType !== 1) {
-        this.containerCtx.clearRect(0, 0, this.containerCanvas.width, this.containerCanvas.height);
+  public async cropGif(gif: ParsedGif, signal: AbortSignal, onFrame: (frame: ImageData, delay: number) => void): Promise<void> {
+    const frames = gif.frames.filter((frame): frame is Extract<ParsedGif['frames'][number], {image: unknown}> => 'image' in frame);
+    if (!frames.length) throw new Error('The GIF contains no image frames.');
+    const background = gif.gct?.[gif.lsd.backgroundColorIndex];
+    const first = frames[0].gce;
+    const transparentBackground = first?.extras.transparentColorGiven && first.transparentColorIndex === gif.lsd.backgroundColorIndex;
+    this.compositeContext.clearRect(0, 0, gif.lsd.width, gif.lsd.height);
+    if (background) this.compositeContext.fillStyle = 'rgb(' + background.join(' ') + ')';
+    if (background && !transparentBackground) this.compositeContext.fillRect(0, 0, gif.lsd.width, gif.lsd.height);
+
+    let previous: {frame: ParsedFrame; transparentBackground: boolean} | undefined;
+    let restorePrevious: ImageData | undefined;
+    for (const frame of frames) {
+      if (signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+      if (previous?.frame.disposalType === 2) {
+        const {left, top, width, height} = previous.frame.dims;
+        this.compositeContext.clearRect(left, top, width, height);
+        if (background && !previous.transparentBackground) this.compositeContext.fillRect(left, top, width, height);
+      } else if (previous?.frame.disposalType === 3 && restorePrevious) {
+        this.compositeContext.putImageData(restorePrevious, 0, 0);
       }
-      // 添加gif背景颜色
-      if(this.containerCtx.globalCompositeOperation && this.cropperJsOpts?.background) {
-        this.containerCtx.fillStyle = this.cropperJsOpts?.background || "";
-        this.containerCtx.globalCompositeOperation = "destination-over";
-        this.containerCtx.fillRect(0, 0, this.containerCanvas.width, this.containerCanvas.height);
-        this.containerCtx.globalCompositeOperation = "source-over";
-      }
-
-      // 裁剪转换当前帧
-      if (!currentFrame) continue;
-      const imageData = this.transformFrame(
-        this.drawImgDataToCanvas(
-          currentFrame, 
-          frameIdx
-        ),
-      );
-      this.resultFrames.push(imageData);
-      // debug
-      this.ifDebugRun(imageData, frameIdx);
-      frameIdx++;
+      restorePrevious = undefined;
+      const parsed = decompressFrame(frame, gif.gct, true);
+      if (parsed.disposalType === 3) restorePrevious = this.compositeContext.getImageData(0, 0, gif.lsd.width, gif.lsd.height);
+      this.patchCanvas.width = parsed.dims.width;
+      this.patchCanvas.height = parsed.dims.height;
+      const patch = this.patchContext.createImageData(parsed.dims.width, parsed.dims.height);
+      patch.data.set(parsed.patch);
+      this.patchContext.putImageData(patch, 0, 0);
+      this.compositeContext.drawImage(this.patchCanvas, parsed.dims.left, parsed.dims.top);
+      onFrame(this.transformFrame(this.compositeCanvas), (frame.gce?.delay ?? 0) * 10);
+      previous = {
+        frame: parsed,
+        transparentBackground: !!(frame.gce?.extras.transparentColorGiven && frame.gce.transparentColorIndex === gif.lsd.backgroundColorIndex),
+      };
+      previous.frame.patch = new Uint8ClampedArray(0);
+      previous.frame.pixels = [];
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
     }
-
-    return this.resultFrames;
+    if (signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
   }
 
-  public cropStaticImage(canvasImageContainer: HTMLCanvasElement): ImageData {
-    return this.transformFrame(canvasImageContainer);
+  public cropStaticImage(image: CanvasImageSource): ImageData {
+    return this.transformFrame(image);
   }
 
-  private transformFrame(canvasImageContainer: HTMLCanvasElement): ImageData {
-    this.containerCtx.save();
-    // 判断偏移方向
-    this.containerCtx.translate(this.containerCenterX, this.containerCenterY);
-    this.containerCtx.rotate((this.cropperJsOpts.rotate * Math.PI) / 180);
-    this.containerCtx.scale(this.cropperJsOpts.scaleX, this.cropperJsOpts.scaleY);
-
-    this.containerCtx.drawImage(
-      canvasImageContainer,
-      -this.convertorCanvas.width / 2,
-      -this.convertorCanvas.height / 2
-    );
-    this.containerCtx.restore();
-    const moveCropBoxDirection = 1;
-    const imageData = this.containerCtx.getImageData(
-      moveCropBoxDirection * this.cropperJsOpts.x + this.offsetX,
-      moveCropBoxDirection * this.cropperJsOpts.y + this.offsetY,
-      this.cropperJsOpts.width,
-      this.cropperJsOpts.height
-    );
-
-    return imageData;
-  }
-
-  private drawImgDataToCanvas(frame: ImageData, index: number): HTMLCanvasElement {
-    const dims = this.parsedFrames[index]?.dims;
-    this.convertCtx.clearRect(0, 0, this.convertorCanvas.width, this.convertorCanvas.height);
-    this.convertCtx.putImageData(frame, dims.left, dims.top);
-
-    return this.convertorCanvas;
-  }
-
-  private ifDebugRun(imageData: ImageData, index?: number) {
-    // debug
-    const isDebug = location.search.includes('isCropDebug=true')
-    isDebug && index && this.renderEachFrame(imageData, index);
-  }
-
-  private renderEachFrame(frame: ImageData, index: number): void {
-    const dims = this.parsedFrames[index]?.dims;
-    const eachCanvas = document.createElement('canvas');
-
-    // set w h
-    eachCanvas.width = this.convertorCanvas.width;
-    eachCanvas.height = this.convertorCanvas.height;
-
-    // put image
-    const ctx = eachCanvas.getContext('2d');
-    if (!ctx) return;
-    ctx?.putImageData(frame, dims.left, dims.top);
-
-    // write index
-    ctx.fillStyle = 'red'
-    ctx.strokeStyle = "blue";
-    ctx.lineWidth = 5;
-    ctx.save()
-    ctx.beginPath();
-    ctx.font = '70px orbitron'
-    ctx.fillText(String(index), 10, 50);
-    ctx.restore()
-    ctx.closePath();
-
-    // append to screen
-    document.body.appendChild(eachCanvas);
-  }
-
-  private setupCanvas() {
-    const containerCanvas = (this.containerCanvas = document.createElement('canvas'));
-    const convertorCanvas = (this.convertorCanvas = document.createElement('canvas'));
-    containerCanvas.className = 'containerCanvas';
-    convertorCanvas.className = 'convertorCanvas';
-    containerCanvas.style.display = 'none';
-    convertorCanvas.style.display = 'none';
-
-    const containerCtx = containerCanvas.getContext('2d', { willReadFrequently: true });
-    const convertCtx = convertorCanvas.getContext('2d');
-    containerCtx && (this.containerCtx = containerCtx);
-    convertCtx && (this.convertCtx = convertCtx);
-
-    document.body.appendChild(convertorCanvas);
-    document.body.appendChild(containerCanvas);
-  }
-
-  private setCanvasWH() {
-    // 计算弧度
-    const radian = (Math.PI / 180) * this.cropperJsOpts.rotate;
-    const imageData = this.commonCropOptions.imageData;
-    // 计算旋转后的容器宽高
-    const rotatedBoxWidth = imageData.naturalWidth;
-      // Math.abs(imageData.naturalWidth * Math.cos(radian)) +
-      // Math.abs(imageData.naturalHeight * Math.sin(radian));
-    const rotatedBoxHeight =  imageData.naturalHeight;
-      // Math.abs(imageData.naturalHeight * Math.cos(radian)) +
-      // Math.abs(imageData.naturalWidth * Math.sin(radian));
-
-    // 计算偏移量
-    this.offsetX = -Math.min(this.cropperJsOpts.x, 0);
-    this.offsetY = -Math.min(this.cropperJsOpts.y, 0);
-    // 计算容器中心位置
-    this.containerCenterX = this.offsetX + rotatedBoxWidth / 2;
-    this.containerCenterY = this.offsetY + rotatedBoxHeight / 2;
-
-    // 设置容器宽高
-    this.containerCanvas.width = Math.max(
-      this.offsetX + rotatedBoxWidth,
-      this.offsetX + this.cropperJsOpts.width,
-      this.cropperJsOpts.x + this.cropperJsOpts.width
-    );
-    this.containerCanvas.height = Math.max(
-      this.offsetY + rotatedBoxHeight,
-      this.offsetY + this.cropperJsOpts.height,
-      this.cropperJsOpts.y + this.cropperJsOpts.height
-    );
-
-    this.convertorCanvas.width = imageData.naturalWidth;
-    this.convertorCanvas.height = imageData.naturalHeight;
-
-    // 清理画布
-    this.containerCtx.clearRect(0, 0, this.containerCanvas.width, this.containerCanvas.height);
-    this.convertCtx.clearRect(0, 0, this.convertorCanvas.width, this.convertorCanvas.height);
-  }
-
-  private frameToImgData(ctx: CanvasRenderingContext2D | null, frame: ParsedFrame) {
-    if (!ctx) return;
-    const totalPixels = frame.pixels.length;
-    const imgData = ctx.createImageData(frame.dims.width, frame.dims.height);
-    const patchData = imgData.data;
-    for (let i = 0; i < totalPixels; i++) {
-      const pos = i * 4;
-      const colorIndex = frame.pixels[i];
-      const color = frame.colorTable[colorIndex];
-      patchData[pos] = color[0];
-      patchData[pos + 1] = color[1];
-      patchData[pos + 2] = color[2];
-      patchData[pos + 3] = colorIndex !== frame.transparentIndex ? 255 : 0;
+  private transformFrame(image: CanvasImageSource): ImageData {
+    const {cropperJsOpts: crop, imageData, outputWidth, outputHeight} = this.commonCropOptions;
+    const angle = (crop.rotate * Math.PI) / 180;
+    const width = imageData.naturalWidth;
+    const height = imageData.naturalHeight;
+    const rotatedWidth = Math.abs(width * crop.scaleX * Math.cos(angle)) + Math.abs(height * crop.scaleY * Math.sin(angle));
+    const rotatedHeight = Math.abs(width * crop.scaleX * Math.sin(angle)) + Math.abs(height * crop.scaleY * Math.cos(angle));
+    this.outputContext.clearRect(0, 0, outputWidth, outputHeight);
+    if (crop.background) {
+      this.outputContext.fillStyle = crop.background;
+      this.outputContext.fillRect(0, 0, outputWidth, outputHeight);
     }
-    return imgData;
+    this.outputContext.save();
+    this.outputContext.scale(outputWidth / crop.width, outputHeight / crop.height);
+    this.outputContext.translate(-crop.x, -crop.y);
+    this.outputContext.translate(rotatedWidth / 2, rotatedHeight / 2);
+    this.outputContext.rotate(angle);
+    this.outputContext.scale(crop.scaleX, crop.scaleY);
+    this.outputContext.drawImage(image, -width / 2, -height / 2);
+    this.outputContext.restore();
+    return this.outputContext.getImageData(0, 0, outputWidth, outputHeight);
+  }
+
+  public destroy(): void {
+    for (const canvas of [this.outputCanvas, this.compositeCanvas, this.patchCanvas]) {
+      canvas.width = canvas.height = 0;
+      canvas.remove();
+    }
   }
 }

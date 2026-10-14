@@ -1,74 +1,74 @@
 import { transformToUrl as gifWorkerTransformToUrl } from 'gif-build-worker-js';
 import GIF from 'gif.js';
-import { ICommonCropOptions, ICropperOptions } from '../index';
-import { IOutputTypeUnion, OutputType } from '../index';
+import type { ICommonCropOptions, IGifOpts } from '../index';
+
+type NativeGIF = GIF & {
+  frames: {delay: number; data?: Uint8ClampedArray}[];
+  freeWorkers: Worker[];
+  activeWorkers: Worker[];
+  imageParts?: unknown[];
+  running: boolean;
+};
 
 export interface IFrameCropperProps {
   commonCropOptions: ICommonCropOptions;
-  frames: ImageData[];
-  frameDelays: number[];
-  gifJsOptions?: ICropperOptions['gifJsOptions'];
-  outputType?: IOutputTypeUnion;
+  repeat: number;
+  gifJsOptions?: IGifOpts;
+  signal: AbortSignal;
 }
-export class SyntheticGIF {
-  private cropperJsOpts;
-  private frames;
-  private frameDelays;
-  private gifJsOptions;
-  private outputType;
 
-  constructor({ frames, commonCropOptions, frameDelays, gifJsOptions = {}, outputType }: IFrameCropperProps) {
-    this.cropperJsOpts = commonCropOptions.cropperJsOpts;
-    this.frames = frames;
-    this.frameDelays = frameDelays;
-    this.gifJsOptions = gifJsOptions;
-    this.outputType = outputType;
+export class SyntheticGIF {
+  public readonly gif: NativeGIF;
+  private workerUrl?: string;
+  private reject?: (reason: Error) => void;
+  private readonly signal: AbortSignal;
+  private readonly onAbort = () => this.destroy();
+
+  constructor({commonCropOptions, repeat, gifJsOptions = {}, signal}: IFrameCropperProps) {
+    this.signal = signal;
+    if (!gifJsOptions.workerScript) this.workerUrl = gifWorkerTransformToUrl();
+    this.gif = new GIF({
+      workers: 2,
+      quality: 10,
+      ...gifJsOptions,
+      workerScript: gifJsOptions.workerScript || this.workerUrl,
+      width: commonCropOptions.outputWidth,
+      height: commonCropOptions.outputHeight,
+      repeat: gifJsOptions.repeat ?? repeat,
+      transparent: gifJsOptions.transparent ?? null,
+    } as GIF.Options) as NativeGIF;
+    signal.addEventListener('abort', this.onAbort, {once: true});
   }
 
-  public bootstrap(): Promise<string | Blob> {
+  public bootstrap(): Promise<Blob> {
     return new Promise((resolve, reject) => {
-      const gifWorkerUrl = gifWorkerTransformToUrl();
-      const gifOptions = Object.assign(
-        {
-          workers: 2,
-          quality: 10,
-          workerScript: gifWorkerUrl,
-          width: this.cropperJsOpts.width,
-          height: this.cropperJsOpts.height,
-          transparent: 'transparent',
-        },
-        this.gifJsOptions || {}
-      )
-      const gif = new GIF(gifOptions);
-      gif.on('finished', (blob: Blob) => {
-        if (this.outputType === OutputType.BLOB) {
-          resolve(blob);
-        } else if (this.outputType === OutputType.BASE64) {
-          resolve(this.convertBlob2Base64(blob));
-        } else {
-          const blobUrl = window.URL.createObjectURL(blob);
-          resolve(blobUrl);
-        }
-      });
-
-      this.frames.forEach((frame, idx) => {
-        gif.addFrame(frame, { delay: this.frameDelays[idx], copy: true });
-      });
-
-      gif.render();
+      this.reject = reject;
+      if (this.signal.aborted) {
+        this.destroy();
+        return;
+      }
+      this.gif.once('finished', (blob: Blob) => resolve(blob));
+      this.gif.once('abort', () => reject(new DOMException('The image operation was aborted.', 'AbortError')));
+      this.gif.render();
+      for (const worker of [...this.gif.activeWorkers, ...this.gif.freeWorkers]) {
+        worker.onerror = () => {
+          reject(new Error('The GIF encoding worker failed.'));
+          this.destroy();
+        };
+      }
     });
   }
 
-  private convertBlob2Base64(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = function(event) {
-        resolve(event?.target?.result as string)
-      };
-      reader.onerror = (e) => {
-        reject(e);
-      }
-      reader.readAsDataURL(blob);
-    })
+  public destroy(): void {
+    this.signal.removeEventListener('abort', this.onAbort);
+    this.reject?.(new DOMException('The image operation was aborted.', 'AbortError'));
+    this.reject = undefined;
+    this.gif.abort();
+    for (const worker of this.gif.freeWorkers) worker.terminate();
+    this.gif.freeWorkers.length = this.gif.activeWorkers.length = this.gif.frames.length = 0;
+    if (this.gif.imageParts) this.gif.imageParts.length = 0;
+    this.gif.removeAllListeners();
+    if (this.workerUrl) URL.revokeObjectURL(this.workerUrl);
+    this.workerUrl = undefined;
   }
 }

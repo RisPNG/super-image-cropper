@@ -1,48 +1,34 @@
-import commonjs from 'rollup-plugin-commonjs';
+import commonjs from '@rollup/plugin-commonjs';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
 import typescript from 'rollup-plugin-typescript2';
-import { terser } from 'rollup-plugin-terser';
-import del from 'rollup-plugin-delete';
+import { readFileSync } from 'node:fs';
 
-export const generateRollupConfig = (props) => {
-  const { input, rootDir } = props;
+export const generateRollupConfig = ({ input, rootDir }) => {
+  const license = readFileSync(new URL('../LICENSE', import.meta.url), 'utf8');
+  const notices = readFileSync(new URL('../THIRD-PARTY-NOTICES', import.meta.url), 'utf8');
 
-  const cjsOutput = `${rootDir}/dist`;
-  const esmOutput = `${rootDir}/esm`
-  
-  return [
-    // CJS
-    {
+  return ['cjs', 'es'].map((format) => {
+    const outputDir = `${rootDir}/${format === 'cjs' ? 'dist' : 'esm'}`;
+
+    return {
       input,
+      external: (id) => !id.startsWith('.') && !id.startsWith('/') && id !== 'gif-build-worker-js',
       output: {
-        dir: cjsOutput,
-        format: 'cjs',
+        dir: outputDir,
+        format,
+        entryFileNames: format === 'cjs' ? '[name].cjs' : '[name].js',
+        chunkFileNames: format === 'cjs' ? '[name]-[hash].cjs' : '[name]-[hash].js',
         sourcemap: true,
-        preserveModules: true,
-        preserveModulesRoot: 'src',
+        banner: `/*!\n${license}\n${notices}\n*/`,
       },
       plugins: [
-        del({ targets: `${cjsOutput}/*` }),
+        nodeResolve({ browser: true, resolveOnly: ['gif-build-worker-js'] }),
         commonjs(),
-        typescript(),
-        terser(),
-      ]
-    },
-    // ESM
-    {
-      input,
-      output: {
-        dir: esmOutput,
-        format: 'es',
-        sourcemap: true,
-        preserveModules: true,
-        preserveModulesRoot: 'src',
-      },
-      plugins: [
-        del({ targets: `${esmOutput}/*` }),
-        commonjs(),
-        typescript(),
-        terser(),
-      ]
-    }
-  ];
-}
+        typescript({
+          tsconfigOverride: { compilerOptions: { declarationDir: outputDir } },
+          useTsconfigDeclarationDir: true,
+        }),
+      ],
+    };
+  });
+};
