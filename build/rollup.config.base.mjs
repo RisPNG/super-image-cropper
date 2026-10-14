@@ -2,6 +2,7 @@ import commonjs from '@rollup/plugin-commonjs';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import typescript from 'rollup-plugin-typescript2';
 import { readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 
 export const generateRollupConfig = ({ input, rootDir }) => {
   const license = readFileSync(new URL('../LICENSE', import.meta.url), 'utf8');
@@ -12,7 +13,7 @@ export const generateRollupConfig = ({ input, rootDir }) => {
 
     return {
       input,
-      external: (id) => !id.startsWith('.') && !id.startsWith('/') && id !== 'gif-build-worker-js',
+      external: (id) => !id.startsWith('.') && !isAbsolute(id) && id !== 'gif-build-worker-js',
       output: {
         dir: outputDir,
         format,
