@@ -14,6 +14,7 @@ export class FrameCropper {
   private readonly compositeContext = this.compositeCanvas.getContext('2d', {willReadFrequently: true})!;
   private readonly patchContext = this.patchCanvas.getContext('2d')!;
   private commonCropOptions!: ICommonCropOptions;
+  private imageTransform!: [number, number, number, number, number, number];
 
   constructor(props: IFrameCropperProps) {
     this.init(props);
@@ -25,6 +26,18 @@ export class FrameCropper {
     this.outputCanvas.height = commonCropOptions.outputHeight;
     this.compositeCanvas.width = commonCropOptions.imageData.naturalWidth;
     this.compositeCanvas.height = commonCropOptions.imageData.naturalHeight;
+    const {cropperJsOpts: crop, imageData} = commonCropOptions;
+    const angle = (crop.rotate * Math.PI) / 180;
+    const width = imageData.naturalWidth;
+    const height = imageData.naturalHeight;
+    this.imageTransform = commonCropOptions.imageTransform || [
+      Math.cos(angle) * crop.scaleX,
+      Math.sin(angle) * crop.scaleX,
+      -Math.sin(angle) * crop.scaleY,
+      Math.cos(angle) * crop.scaleY,
+      (Math.abs(width * crop.scaleX * Math.cos(angle)) + Math.abs(height * crop.scaleY * Math.sin(angle))) / 2,
+      (Math.abs(width * crop.scaleX * Math.sin(angle)) + Math.abs(height * crop.scaleY * Math.cos(angle))) / 2,
+    ];
   }
 
   public async cropGif(gif: ParsedGif, signal: AbortSignal, onFrame: (frame: ImageData, delay: number) => void): Promise<void> {
@@ -75,11 +88,8 @@ export class FrameCropper {
 
   private transformFrame(image: CanvasImageSource): ImageData {
     const {cropperJsOpts: crop, imageData, outputWidth, outputHeight} = this.commonCropOptions;
-    const angle = (crop.rotate * Math.PI) / 180;
     const width = imageData.naturalWidth;
     const height = imageData.naturalHeight;
-    const rotatedWidth = Math.abs(width * crop.scaleX * Math.cos(angle)) + Math.abs(height * crop.scaleY * Math.sin(angle));
-    const rotatedHeight = Math.abs(width * crop.scaleX * Math.sin(angle)) + Math.abs(height * crop.scaleY * Math.cos(angle));
     this.outputContext.clearRect(0, 0, outputWidth, outputHeight);
     if (crop.background) {
       this.outputContext.fillStyle = crop.background;
@@ -88,9 +98,7 @@ export class FrameCropper {
     this.outputContext.save();
     this.outputContext.scale(outputWidth / crop.width, outputHeight / crop.height);
     this.outputContext.translate(-crop.x, -crop.y);
-    this.outputContext.translate(rotatedWidth / 2, rotatedHeight / 2);
-    this.outputContext.rotate(angle);
-    this.outputContext.scale(crop.scaleX, crop.scaleY);
+    this.outputContext.transform(...this.imageTransform);
     this.outputContext.drawImage(image, -width / 2, -height / 2);
     this.outputContext.restore();
     return this.outputContext.getImageData(0, 0, outputWidth, outputHeight);

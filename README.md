@@ -51,7 +51,9 @@ mise exec -- npm test
 mise exec -- npm run check
 ```
 
-`crop()` accepts `outputWidth` and `outputHeight` separately from the source crop rectangle, so a selected area can be resized to exact output dimensions. Omit both to retain the crop's source dimensions. It also accepts an `AbortSignal` through `signal`; aborting or calling `destroy()` cancels preparation and releases its canvases, workers, and generated URLs. Source GIF frame delays, loop counts, frame disposal, and transparency are retained during processing. GIF encoding uses the fork's worker with a reserved transparent palette index, keeping opaque black separate from transparent pixels.
+The current integration uses native Cropper.js 2 elements. Pass the actual `Cropper` instance to `cropperInstance`; the processor reads its image transform matrix and selection rectangle. Existing Cropper.js 1 instances with `getData()` and manual `cropperJsOpts` use the same rendering pipeline. No replacement instance or wrapper is needed.
+
+`crop()` accepts `outputWidth` and `outputHeight` separately from the source crop rectangle, so a selected area can be resized to exact output dimensions. Omit both to retain the crop's source dimensions. It also accepts an `AbortSignal` through `signal`; aborting or calling `destroy()` cancels preparation and releases its canvases, workers, and generated URLs. The processor applies source GIF frame disposal while retaining animation delays, loop counts, and transparency. GIF encoding uses the fork's worker with a reserved transparent palette index, keeping opaque black separate from transparent pixels.
 
 Use `outputType: 'blob'` when preparing a file locally for later form submission. For example:
 
@@ -75,20 +77,20 @@ The package retains the original MIT licence and includes complete third-party n
 ### Installation
 
 ```bash
-npm install super-image-cropper
+mise exec -- npm install git+https://github.com/RisPNG/super-image-cropper.git#ris
 ```
 
 ```bash
-yarn add super-image-cropper
+mise exec -- yarn add git+https://github.com/RisPNG/super-image-cropper.git#ris
 ```
 
 ```bash
-pnpm add super-image-cropper
+mise exec -- pnpm add git+https://github.com/RisPNG/super-image-cropper.git#ris
 ```
 
 ### Basic Usage
 
-#### With CropperJS (Recommended)
+#### With native Cropper.js 2 (Recommended)
 
 ```html
 <img id="image" src="your-image.gif" alt="Image to crop">
@@ -98,34 +100,34 @@ pnpm add super-image-cropper
 import { SuperImageCropper } from 'super-image-cropper';
 import Cropper from 'cropperjs';
 
-// Initialize CropperJS
 const image = document.getElementById('image') as HTMLImageElement;
-const cropperInstance = new Cropper(image, {
-  aspectRatio: 16 / 9,
-  autoCrop: false,
-  autoCropArea: 1,
-  minCropBoxHeight: 10,
-  minCropBoxWidth: 10,
-  viewMode: 1,
-  initialAspectRatio: 1,
-  responsive: false,
-  guides: true
-});
+const cropperInstance = new Cropper(image);
+const cropperImage = cropperInstance.getCropperImage()!;
+const selection = cropperInstance.getCropperSelection()!;
+selection.aspectRatio = 16 / 9;
+selection.initialCoverage = 0.8;
+selection.precise = true;
 
-// Create cropper instance
+await cropperImage.$ready();
+selection.$reset();
+
 const imageCropper = new SuperImageCropper();
-
-// Crop the image
-imageCropper.crop({
-  cropperInstance: cropperInstance,
-  src: 'your-image.gif',
-  outputType: 'blobURL' // optional, default is blobURL
-}).then(blobUrl => {
-  const img = document.createElement('img');
-  img.src = blobUrl;
-  document.body.appendChild(img);
-});
+const blobUrl = await imageCropper.crop({
+  cropperInstance,
+  src: image.src,
+  outputWidth: 640,
+  outputHeight: 360,
+  outputType: 'blobURL',
+}) as string;
+const preview = document.createElement('img');
+preview.src = blobUrl;
+preview.alt = 'Cropped image';
+document.body.appendChild(preview);
 ```
+
+The default Cropper.js 2 template supplies the image and selection elements used here. Configure the selection on that element, then wait for the image before exporting. For an interactive editor, run `crop()` when the user confirms their selection. The same image matrix and selection apply to every GIF frame.
+
+Keep the processor alive while displaying its returned Blob URLs. When discarding those previews, call `imageCropper.destroy()` to revoke them and cancel any active export. A source URL created with `URL.createObjectURL(file)` belongs to the caller; keep it available while the editor can export, then revoke it when closing the editor. Use `outputType: 'blob'` for a file that will be uploaded later; destroying the processor does not invalidate the returned Blob.
 
 #### Standalone Usage
 
@@ -169,15 +171,17 @@ Cancels active processing and releases package-owned image buffers, canvases, GI
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `src` | `string` | Yes | Image URL or path |
+| `src` | `string` | No | Image URL or path; inferred from a supplied Cropper instance when omitted |
 | `crossOrigin` | `string` | No | CORS strategy for image loading |
-| `cropperInstance` | `Cropper` | No | CropperJS instance (when used with CropperJS) |
+| `cropperInstance` | `Cropper` | No | Native Cropper.js 2 instance or existing Cropper.js 1 instance with `getData()` |
 | `cropperJsOpts` | `CropperJsOptions` | No | Manual cropping parameters |
 | `outputWidth` | `number` | No | Resized output width in pixels |
 | `outputHeight` | `number` | No | Resized output height in pixels |
 | `signal` | `AbortSignal` | No | Cancel active processing |
 | `gifJsOptions` | `object` | No | [gif.js](https://github.com/jnordberg/gif.js) configuration |
 | `outputType` | `'base64' \| 'blob' \| 'blobURL'` | No | Output format (default: `'blobURL'`) |
+
+Provide either `cropperInstance` or `cropperJsOpts`. Manual cropping requires `src`; a Cropper instance can supply its source. Manual offsets and dimensions describe the source crop, while `outputWidth` and `outputHeight` describe its resized output.
 
 #### CropperJsOptions
 
@@ -224,8 +228,7 @@ await cropper.crop({
   },
   gifJsOptions: {
     quality: 10,
-    workers: 2,
-    workerScript: 'gif.worker.js'
+    workers: 2
   },
   outputType: 'blob'
 });

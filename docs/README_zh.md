@@ -43,20 +43,22 @@
 ### 安装
 
 ```bash
-npm install super-image-cropper
+mise exec -- npm install git+https://github.com/RisPNG/super-image-cropper.git#ris
 ```
 
 ```bash
-yarn add super-image-cropper
+mise exec -- yarn add git+https://github.com/RisPNG/super-image-cropper.git#ris
 ```
 
 ```bash
-pnpm add super-image-cropper
+mise exec -- pnpm add git+https://github.com/RisPNG/super-image-cropper.git#ris
 ```
 
 ### 基础用法
 
-#### 与CropperJS配合使用（推荐）
+#### 与原生Cropper.js 2配合使用（推荐）
+
+当前集成直接使用Cropper.js 2的图像元素变换矩阵和选区。将实际的Cropper实例传入`cropperInstance`即可。已有的Cropper.js 1实例通过`getData()`提供裁剪参数，手动`cropperJsOpts`也使用同一套渲染流程，无需替换实例或添加包装器。
 
 ```html
 <img id="image" src="your-image.gif" alt="要裁剪的图像">
@@ -66,34 +68,34 @@ pnpm add super-image-cropper
 import { SuperImageCropper } from 'super-image-cropper';
 import Cropper from 'cropperjs';
 
-// 初始化CropperJS
 const image = document.getElementById('image') as HTMLImageElement;
-const cropperInstance = new Cropper(image, {
-  aspectRatio: 16 / 9,
-  autoCrop: false,
-  autoCropArea: 1,
-  minCropBoxHeight: 10,
-  minCropBoxWidth: 10,
-  viewMode: 1,
-  initialAspectRatio: 1,
-  responsive: false,
-  guides: true
-});
+const cropperInstance = new Cropper(image);
+const cropperImage = cropperInstance.getCropperImage()!;
+const selection = cropperInstance.getCropperSelection()!;
+selection.aspectRatio = 16 / 9;
+selection.initialCoverage = 0.8;
+selection.precise = true;
 
-// 创建裁剪器实例
+await cropperImage.$ready();
+selection.$reset();
+
 const imageCropper = new SuperImageCropper();
-
-// 裁剪图像
-imageCropper.crop({
-  cropperInstance: cropperInstance,
-  src: 'your-image.gif',
-  outputType: 'blobURL' // 可选，默认为blobURL
-}).then(blobUrl => {
-  const img = document.createElement('img');
-  img.src = blobUrl;
-  document.body.appendChild(img);
-});
+const blobUrl = await imageCropper.crop({
+  cropperInstance,
+  src: image.src,
+  outputWidth: 640,
+  outputHeight: 360,
+  outputType: 'blobURL',
+}) as string;
+const preview = document.createElement('img');
+preview.src = blobUrl;
+preview.alt = 'Cropped image';
+document.body.appendChild(preview);
 ```
+
+默认的Cropper.js 2模板提供图像和选区元素。在选区元素上设置比例和初始覆盖范围，并等待图像就绪后导出。在交互式编辑器中，应在用户确认选区时调用`crop()`。相同的图像变换和选区会应用到GIF的每一帧。
+
+显示返回的Blob URL期间，请保留处理器实例。丢弃预览时调用`imageCropper.destroy()`，即可撤销这些URL并取消正在执行的导出。通过`URL.createObjectURL(file)`创建的源URL由调用方管理；编辑器仍可导出时应保留它，关闭编辑器后再撤销。需要稍后上传文件时，使用`outputType: 'blob'`；销毁处理器不会使返回的Blob失效。
 
 #### 独立使用
 
@@ -129,16 +131,25 @@ imageCropper.crop({
 
 根据提供的选项裁剪图像。
 
+##### `destroy(): void`
+
+取消正在执行的处理，并释放处理器持有的图像缓冲区、画布、GIF工作线程和返回的Blob URL。
+
 #### CropOptions
 
 | 属性 | 类型 | 必需 | 描述 |
 |------|------|------|------|
-| `src` | `string` | 是 | 图像URL或路径 |
+| `src` | `string` | 否 | 图像URL或路径；省略时从传入的Cropper实例读取 |
 | `crossOrigin` | `string` | 否 | 图像加载的CORS策略 |
-| `cropperInstance` | `Cropper` | 否 | CropperJS实例（与CropperJS一起使用时） |
+| `cropperInstance` | `Cropper` | 否 | 原生Cropper.js 2实例，或提供`getData()`的已有Cropper.js 1实例 |
 | `cropperJsOpts` | `CropperJsOptions` | 否 | 手动裁剪参数 |
+| `outputWidth` | `number` | 否 | 调整后的输出宽度，单位为像素 |
+| `outputHeight` | `number` | 否 | 调整后的输出高度，单位为像素 |
+| `signal` | `AbortSignal` | 否 | 取消正在执行的处理 |
 | `gifJsOptions` | `object` | 否 | [gif.js](https://github.com/jnordberg/gif.js) 配置 |
 | `outputType` | `'base64' \| 'blob' \| 'blobURL'` | 否 | 输出格式（默认：`'blobURL'`） |
+
+必须提供`cropperInstance`或`cropperJsOpts`。手动裁剪还需要提供`src`，Cropper实例则可以提供自身的图像源。手动偏移和尺寸描述源图像中的裁剪区域，`outputWidth`和`outputHeight`描述调整后的输出尺寸。处理器会应用源GIF的帧处置规则，并保留动画延迟、循环次数和透明度。
 
 #### CropperJsOptions
 
@@ -185,8 +196,7 @@ await cropper.crop({
   },
   gifJsOptions: {
     quality: 10,
-    workers: 2,
-    workerScript: 'gif.worker.js'
+    workers: 2
   },
   outputType: 'blob'
 });

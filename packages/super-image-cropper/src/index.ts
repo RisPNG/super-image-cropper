@@ -5,10 +5,12 @@ import { SyntheticGIF } from './lib/synthetic-gif';
 import { FrameCropper } from './lib/cropper';
 import { getImageType } from './lib/helper';
 
-export interface CustomCropper extends Cropper {
-  url: string;
-  cropBoxData: Cropper.ImageData;
-  canvasData: Cropper.ImageData;
+export interface CustomCropper {
+  url?: string;
+  getData(): ICropOpts;
+  getCropBoxData?(): ICropOpts;
+  cropBoxData?: IImageData;
+  canvasData?: IImageData;
   cropper?: HTMLDivElement;
 }
 
@@ -67,7 +69,8 @@ export interface IImageData {
 export interface ICommonCropOptions {
   cropperJsOpts: Required<ICropOpts>;
   imageData: IImageData;
-  cropBoxData: Cropper.CropBoxData | ICropOpts;
+  cropBoxData: ICropOpts;
+  imageTransform?: [number, number, number, number, number, number];
   outputWidth: number;
   outputHeight: number;
 }
@@ -88,8 +91,10 @@ export class SuperImageCropper {
   private outputUrls = new Set<string>();
 
   public async crop(options: ICropperOptions): Promise<string | Blob> {
-    const cropper = options.cropperInstance as CustomCropper | undefined;
-    const src = options.src || cropper?.url;
+    const cropper = options.cropperInstance;
+    const cropperImage = cropper && 'getCropperImage' in cropper ? cropper.getCropperImage() : null;
+    const legacyCropper = cropper && 'getData' in cropper ? cropper : null;
+    const src = options.src || legacyCropper?.url || cropperImage?.getAttribute('src');
     if (!src || (!cropper && !options.cropperJsOpts)) {
       throw new Error('Specify an image source and crop options or a Cropper instance.');
     }
@@ -129,8 +134,8 @@ export class SuperImageCropper {
         height = gif.lsd.height;
       } else {
         let rasterBlob = sourceBlob;
-        if (imageType?.mime === 'image/jpeg' && cropper?.url !== src && cropper?.url?.startsWith('data:image/jpeg;')) {
-          const rasterResponse = await fetch(cropper.url, {signal: controller.signal});
+        if (imageType?.mime === 'image/jpeg' && legacyCropper?.url !== src && legacyCropper?.url?.startsWith('data:image/jpeg;')) {
+          const rasterResponse = await fetch(legacyCropper.url, {signal: controller.signal});
           if (!rasterResponse.ok) throw new Error('The normalized JPEG source could not be loaded.');
           rasterBlob = await rasterResponse.blob();
         }
@@ -139,14 +144,36 @@ export class SuperImageCropper {
         width = operation.image.width;
         height = operation.image.height;
       }
-      const data = {...options.cropperJsOpts, ...cropper?.getData()};
+      let data = {...options.cropperJsOpts, ...legacyCropper?.getData()};
+      let imageTransform: ICommonCropOptions['imageTransform'];
+      let sourceScale = 1;
+      if (cropperImage && cropper && 'getCropperSelection' in cropper) {
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const onAbort = () => reject(new DOMException('The image operation was aborted.', 'AbortError'));
+          controller.signal.addEventListener('abort', onAbort, {once: true});
+          cropperImage.$ready().then(result => {
+            controller.signal.removeEventListener('abort', onAbort);
+            resolve(result);
+          }, error => {
+            controller.signal.removeEventListener('abort', onAbort);
+            reject(error);
+          });
+        });
+        if (controller.signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+        const selection = cropper.getCropperSelection();
+        if (!selection || !selection.width || !selection.height) throw new Error('Select an image area before cropping.');
+        const [a, b, c, d, e, f] = cropperImage.$getTransform();
+        imageTransform = [a, b, c, d, e + image.naturalWidth / 2, f + image.naturalHeight / 2];
+        sourceScale = Math.sqrt(Math.abs(a * d - b * c));
+        data = {...data, x: selection.x, y: selection.y, width: selection.width, height: selection.height};
+      }
       const angle = ((data.rotate || 0) * Math.PI) / 180;
       const scaleX = data.scaleX ?? 1;
       const scaleY = data.scaleY ?? 1;
       const cropWidth = data.width ?? Math.abs(width * scaleX * Math.cos(angle)) + Math.abs(height * scaleY * Math.sin(angle));
       const cropHeight = data.height ?? Math.abs(width * scaleX * Math.sin(angle)) + Math.abs(height * scaleY * Math.cos(angle));
-      const outputWidth = options.outputWidth ?? Math.max(1, Math.round(options.outputHeight ? options.outputHeight * cropWidth / cropHeight : cropWidth));
-      const outputHeight = options.outputHeight ?? Math.max(1, Math.round(options.outputWidth ? options.outputWidth * cropHeight / cropWidth : cropHeight));
+      const outputWidth = options.outputWidth ?? Math.max(1, Math.round(options.outputHeight ? options.outputHeight * cropWidth / cropHeight : cropWidth / sourceScale));
+      const outputHeight = options.outputHeight ?? Math.max(1, Math.round(options.outputWidth ? options.outputWidth * cropHeight / cropWidth : cropHeight / sourceScale));
       const commonCropOptions: ICommonCropOptions = {
         cropperJsOpts: {
           width: cropWidth,
@@ -161,7 +188,8 @@ export class SuperImageCropper {
           background: data.background ?? '',
         },
         imageData: {width, height, naturalWidth: width, naturalHeight: height},
-        cropBoxData: cropper?.getCropBoxData() || data,
+        cropBoxData: legacyCropper?.getCropBoxData?.() || data,
+        imageTransform,
         outputWidth,
         outputHeight,
       };

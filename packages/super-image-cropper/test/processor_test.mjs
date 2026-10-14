@@ -104,6 +104,7 @@ class TestWorker {
     runInNewContext(workerSource, this.scope);
   }
   postMessage(task) {
+    this.inputTask = structuredClone(task);
     this.task = structuredClone(task);
     if (!TestWorker.hold) this.scope.self.onmessage({data: this.task});
   }
@@ -326,6 +327,106 @@ test('a v1 normalized JPEG raster receives its recorded EXIF rotation exactly on
   assert.deepEqual(Array.from(new Uint8Array(await output.arrayBuffer())), [red, blue].flat());
   assert.equal(closed, 1);
   assert.ok(canvases.every(canvas => canvas.width === 0));
+  crop.destroy();
+});
+
+test('native Cropper v2 uses its source attribute, centered affine transform, and source-resolution selection', async () => {
+  const source = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], {type: 'image/png'});
+  const requested = [];
+  let closed = 0;
+  let ready = 0;
+  globalThis.fetch = async src => { requested.push(src); return {ok: true, blob: async () => source}; };
+  globalThis.createImageBitmap = async () => ({width: 2, height: 1, pixels: new Uint8ClampedArray([red, blue].flat()), close() { closed++; }});
+  const image = {
+    getAttribute: name => name === 'src' ? 'blob:native-v2-image' : null,
+    $ready: async () => { ready++; return {naturalWidth: 2, naturalHeight: 1}; },
+    $getTransform: () => [0.5, 0, 0, 0.5, 4, 3],
+  };
+  const cropperInstance = {
+    getCropperImage: () => image,
+    getCropperSelection: () => ({x: 5, y: 3.25, width: 0.5, height: 0.5}),
+  };
+  const crop = new SuperImageCropper();
+  const output = await crop.crop({cropperInstance, outputType: 'blob'});
+  assert.deepEqual(requested, ['blob:native-v2-image']);
+  assert.equal(output.type, 'image/png');
+  assert.equal(output.size, 4);
+  assert.deepEqual(Array.from(new Uint8Array(await output.arrayBuffer())), blue);
+  assert.equal(ready, 1);
+  assert.equal(closed, 1);
+  assert.ok(canvases.every(canvas => canvas.width === 0));
+  crop.destroy();
+});
+
+test('native Cropper v2 exports rotated and flipped animated frames with exact independent dimensions', async () => {
+  const source = fixture([
+    {width: 2, height: 2, pixels: [1, 2, 3, 4], delay: 0},
+    {width: 2, height: 2, pixels: [4, 3, 2, 1], delay: 7},
+  ], [black, red, green, blue, yellow], 3);
+  globalThis.fetch = async () => ({ok: true, blob: async () => source});
+  const image = {
+    getAttribute: () => 'blob:derived-v2-source',
+    $ready: async () => ({naturalWidth: 2, naturalHeight: 2}),
+    $getTransform: () => [0, -0.5, -0.5, 0, 10, 20],
+  };
+  const cropperInstance = {
+    getCropperImage: () => image,
+    getCropperSelection: () => ({x: 10.5, y: 20.5, width: 1, height: 1}),
+  };
+  const crop = new SuperImageCropper();
+  const firstWorker = workers.length;
+  const output = await crop.crop({src: 'blob:original-gif', cropperInstance, outputWidth: 4, outputHeight: 4, outputType: 'blob'});
+  const gif = parseGIF(await output.arrayBuffer());
+  assert.equal(gif.lsd.width, 4);
+  assert.equal(gif.lsd.height, 4);
+  assert.deepEqual(gif.frames.filter(frame => frame.image).map(frame => frame.gce.delay), [0, 7]);
+  assert.deepEqual(gif.frames.find(frame => frame.application).application.blocks, new Uint8Array([1, 3, 0]));
+  const frames = workers.slice(firstWorker).map(worker => worker.inputTask).sort((left, right) => left.index - right.index);
+  assert.equal(frames.length, 2);
+  for (const [index, frame] of frames.entries()) {
+    const corners = [0, 3, 12, 15].map(pixel => Array.from(frame.data.subarray(pixel * 4, pixel * 4 + 4)));
+    assert.deepEqual(corners, index === 0 ? [yellow, green, blue, red] : [red, blue, green, yellow]);
+  }
+  assert.ok(workers.every(worker => worker.terminated));
+  crop.destroy();
+});
+
+test('native Cropper v2 readiness is abortable without destroying its UI-owned image', async () => {
+  const source = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], {type: 'image/jpeg'});
+  globalThis.fetch = async () => ({ok: true, blob: async () => source});
+  let closed = 0;
+  globalThis.createImageBitmap = async () => ({width: 1, height: 1, pixels: new Uint8ClampedArray(red), close() { closed++; }});
+  let ready;
+  const cropperInstance = {
+    getCropperImage: () => ({$ready: () => new Promise(resolve => { ready = resolve; })}),
+    getCropperSelection: () => ({x: 0, y: 0, width: 1, height: 1}),
+  };
+  const controller = new AbortController();
+  const crop = new SuperImageCropper();
+  const count = urls.length;
+  const pending = crop.crop({src: 'blob:original', cropperInstance, signal: controller.signal});
+  const assertion = assert.rejects(pending, {name: 'AbortError'});
+  while (!ready) await settled();
+  controller.abort();
+  await assertion;
+  ready({naturalWidth: 1, naturalHeight: 1});
+  await settled();
+  assert.equal(closed, 1);
+  assert.equal(urls.length, count);
+  assert.ok(canvases.every(canvas => canvas.width === 0));
+  crop.destroy();
+});
+
+test('native Cropper v2 reports an empty selection and releases its decoded source', async () => {
+  globalThis.fetch = async () => ({ok: true, blob: async () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], {type: 'image/jpeg'})});
+  let closed = 0;
+  globalThis.createImageBitmap = async () => ({width: 1, height: 1, pixels: new Uint8ClampedArray(red), close() { closed++; }});
+  const crop = new SuperImageCropper();
+  await assert.rejects(crop.crop({src: 'blob:original', cropperInstance: {
+    getCropperImage: () => ({$ready: async () => ({naturalWidth: 1, naturalHeight: 1})}),
+    getCropperSelection: () => ({x: 0, y: 0, width: 0, height: 0}),
+  }}), /Select an image area/);
+  assert.equal(closed, 1);
   crop.destroy();
 });
 
