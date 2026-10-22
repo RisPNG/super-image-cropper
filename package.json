@@ -16,7 +16,7 @@
     "husky-commit-msg": "husky set .husky/_/commit-msg 'npm run commitlint --edit $1'",
     "clean": "npm run clean --workspaces",
     "build": "npm run build --workspace=packages/gif-worker-js && npm run build --workspace=packages/super-image-cropper",
-    "format": "prettier --check **/*.ts",
+    "format": "prettier --write **/*.ts",
     "release": "tsx ./scripts/release",
     "changelog": "turbo run changelog --filter=gif-worker-js",
     "check": "npm run check --workspace=packages/super-image-cropper",
