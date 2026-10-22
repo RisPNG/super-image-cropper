@@ -13,7 +13,6 @@
     "lint:fix": "eslint --fix **/*.ts",
     "format:fix": "prettier --write **/*.ts",
     "husky-pre-commit": "husky set .husky/_/pre-commit 'npm run test'",
-    "husky-commit-msg": "husky set .husky/_/commit-msg 'npm run commitlint --edit $1'",
     "clean": "npm run clean --workspaces",
     "build": "npm run build --workspace=packages/gif-worker-js && npm run build --workspace=packages/super-image-cropper",
     "format": "prettier --write **/*.ts",
@@ -23,8 +22,6 @@
     "test": "npm run build && node --test packages/*/test/*_test.mjs"
   },
   "devDependencies": {
-    "@commitlint/cli": "^13.1.0",
-    "@commitlint/config-conventional": "^13.1.0",
     "@rollup/plugin-commonjs": "29.0.3",
     "@rollup/plugin-node-resolve": "16.0.3",
     "@types/fs-extra": "^9.0.13",
@@ -33,7 +30,6 @@
     "@typescript-eslint/parser": "^4.29.3",
     "chalk": "^5.1.2",
     "commitizen": "^4.2.4",
-    "commitlint-config-cz": "^0.13.2",
     "consola": "^2.15.3",
     "cz-conventional-changelog": "^3.3.0",
     "cz-customizable": "^6.3.0",
