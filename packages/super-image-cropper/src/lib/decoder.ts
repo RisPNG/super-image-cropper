@@ -1,9 +1,8 @@
 import { parseGIF } from 'gifuct-js';
 import type { ParsedGif } from 'gifuct-js';
-import type { GetArrTypeUnion } from './helper';
 
 export type IFrames = ParsedGif['frames'];
-export type IFrame = GetArrTypeUnion<IFrames>;
+export type IFrame = IFrames[number];
 
 export class Decoder {
   private gif?: ParsedGif;

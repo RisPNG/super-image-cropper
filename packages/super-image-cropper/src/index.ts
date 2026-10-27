@@ -1,9 +1,9 @@
-import type Cropper from 'cropperjs';
+import type { Cropper } from 'cropperjs/dist/cropper.d.ts';
 import type { ParsedGif } from 'gifuct-js';
+import imageType from 'image-type';
 import { Decoder } from './lib/decoder';
 import { SyntheticGIF } from './lib/synthetic-gif';
 import { FrameCropper } from './lib/cropper';
-import { getImageType } from './lib/helper';
 import { WebPAnimation } from './lib/webp';
 import { WebPEncoder } from './lib/webp-encoder';
 
@@ -19,7 +19,7 @@ export interface CustomCropper {
 export enum OutputType {
   BASE64 = 'base64',
   BLOB = 'blob',
-  BLOB_URL = 'blobURL',
+  BLOB_URL = 'blobURL'
 }
 
 export type IOutputTypeUnion = `${OutputType}`;
@@ -113,22 +113,26 @@ export class SuperImageCropper {
     const operation: CropOperation = {
       controller,
       sourceSignal: options.signal,
-      onAbort: () => controller.abort(),
+      onAbort: () => controller.abort()
     };
     this.operation = operation;
-    options.signal?.addEventListener('abort', operation.onAbort, {once: true});
+    options.signal?.addEventListener('abort', operation.onAbort, { once: true });
     if (options.signal?.aborted) controller.abort();
 
     try {
-      const response = await fetch(src, {signal: controller.signal, credentials: options.crossOrigin === 'use-credentials' ? 'include' : 'same-origin'});
+      const response = await fetch(src, {
+        signal: controller.signal,
+        credentials: options.crossOrigin === 'use-credentials' ? 'include' : 'same-origin'
+      });
       if (!response.ok) throw new Error('The image source could not be loaded.');
       const sourceBlob = await response.blob();
       const bytes = await sourceBlob.arrayBuffer();
-      const imageType = await getImageType(bytes);
-      if (controller.signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+      const sourceType = imageType(new Uint8Array(bytes));
+      if (controller.signal.aborted)
+        throw new DOMException('The image operation was aborted.', 'AbortError');
 
-      const isGIF = imageType?.mime === 'image/gif';
-      operation.webp = imageType?.mime === 'image/webp' ? WebPAnimation.decode(bytes) : undefined;
+      const isGIF = sourceType?.mime === 'image/gif';
+      operation.webp = sourceType?.mime === 'image/webp' ? WebPAnimation.decode(bytes) : undefined;
       let width: number;
       let height: number;
       let gif: ParsedGif | undefined;
@@ -142,46 +146,86 @@ export class SuperImageCropper {
         height = operation.webp.height;
       } else {
         let rasterBlob = sourceBlob;
-        if (imageType?.mime === 'image/jpeg' && legacyCropper?.url !== src && legacyCropper?.url?.startsWith('data:image/jpeg;')) {
-          const rasterResponse = await fetch(legacyCropper.url, {signal: controller.signal});
-          if (!rasterResponse.ok) throw new Error('The normalized JPEG source could not be loaded.');
+        if (
+          sourceType?.mime === 'image/jpeg' &&
+          legacyCropper?.url !== src &&
+          legacyCropper?.url?.startsWith('data:image/jpeg;')
+        ) {
+          const rasterResponse = await fetch(legacyCropper.url, { signal: controller.signal });
+          if (!rasterResponse.ok)
+            throw new Error('The normalized JPEG source could not be loaded.');
           rasterBlob = await rasterResponse.blob();
         }
         operation.image = await createImageBitmap(rasterBlob);
-        if (controller.signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+        if (controller.signal.aborted)
+          throw new DOMException('The image operation was aborted.', 'AbortError');
         width = operation.image.width;
         height = operation.image.height;
       }
-      let data = {...options.cropperJsOpts, ...legacyCropper?.getData()};
+      let data = { ...options.cropperJsOpts, ...legacyCropper?.getData() };
       let imageTransform: ICommonCropOptions['imageTransform'];
       let sourceScale = 1;
       if (cropperImage && cropper && 'getCropperSelection' in cropper) {
         const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-          const onAbort = () => reject(new DOMException('The image operation was aborted.', 'AbortError'));
-          controller.signal.addEventListener('abort', onAbort, {once: true});
-          cropperImage.$ready().then(result => {
-            controller.signal.removeEventListener('abort', onAbort);
-            resolve(result);
-          }, error => {
-            controller.signal.removeEventListener('abort', onAbort);
-            reject(error);
-          });
+          const onAbort = () =>
+            reject(new DOMException('The image operation was aborted.', 'AbortError'));
+          controller.signal.addEventListener('abort', onAbort, { once: true });
+          cropperImage.$ready().then(
+            result => {
+              controller.signal.removeEventListener('abort', onAbort);
+              resolve(result);
+            },
+            error => {
+              controller.signal.removeEventListener('abort', onAbort);
+              reject(error);
+            }
+          );
         });
-        if (controller.signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+        if (controller.signal.aborted)
+          throw new DOMException('The image operation was aborted.', 'AbortError');
         const selection = cropper.getCropperSelection();
-        if (!selection || !selection.width || !selection.height) throw new Error('Select an image area before cropping.');
+        if (!selection || !selection.width || !selection.height)
+          throw new Error('Select an image area before cropping.');
         const [a, b, c, d, e, f] = cropperImage.$getTransform();
         imageTransform = [a, b, c, d, e + image.naturalWidth / 2, f + image.naturalHeight / 2];
         sourceScale = Math.sqrt(Math.abs(a * d - b * c));
-        data = {...data, x: selection.x, y: selection.y, width: selection.width, height: selection.height};
+        data = {
+          ...data,
+          x: selection.x,
+          y: selection.y,
+          width: selection.width,
+          height: selection.height
+        };
       }
       const angle = ((data.rotate || 0) * Math.PI) / 180;
       const scaleX = data.scaleX ?? 1;
       const scaleY = data.scaleY ?? 1;
-      const cropWidth = data.width ?? Math.abs(width * scaleX * Math.cos(angle)) + Math.abs(height * scaleY * Math.sin(angle));
-      const cropHeight = data.height ?? Math.abs(width * scaleX * Math.sin(angle)) + Math.abs(height * scaleY * Math.cos(angle));
-      const outputWidth = options.outputWidth ?? Math.max(1, Math.round(options.outputHeight ? options.outputHeight * cropWidth / cropHeight : cropWidth / sourceScale));
-      const outputHeight = options.outputHeight ?? Math.max(1, Math.round(options.outputWidth ? options.outputWidth * cropHeight / cropWidth : cropHeight / sourceScale));
+      const cropWidth =
+        data.width ??
+        Math.abs(width * scaleX * Math.cos(angle)) + Math.abs(height * scaleY * Math.sin(angle));
+      const cropHeight =
+        data.height ??
+        Math.abs(width * scaleX * Math.sin(angle)) + Math.abs(height * scaleY * Math.cos(angle));
+      const outputWidth =
+        options.outputWidth ??
+        Math.max(
+          1,
+          Math.round(
+            options.outputHeight
+              ? (options.outputHeight * cropWidth) / cropHeight
+              : cropWidth / sourceScale
+          )
+        );
+      const outputHeight =
+        options.outputHeight ??
+        Math.max(
+          1,
+          Math.round(
+            options.outputWidth
+              ? (options.outputWidth * cropHeight) / cropWidth
+              : cropHeight / sourceScale
+          )
+        );
       const commonCropOptions: ICommonCropOptions = {
         cropperJsOpts: {
           width: cropWidth,
@@ -193,30 +237,34 @@ export class SuperImageCropper {
           scaleX,
           scaleY,
           rotate: data.rotate ?? 0,
-          background: data.background ?? '',
+          background: data.background ?? ''
         },
-        imageData: {width, height, naturalWidth: width, naturalHeight: height},
+        imageData: { width, height, naturalWidth: width, naturalHeight: height },
         cropBoxData: legacyCropper?.getCropBoxData?.() || data,
         imageTransform,
         outputWidth,
-        outputHeight,
+        outputHeight
       };
-      operation.frameCropper = new FrameCropper({commonCropOptions});
+      operation.frameCropper = new FrameCropper({ commonCropOptions });
 
       let blob: Blob;
       if (gif) {
-        const application = gif.frames.find(frame => 'application' in frame && ['NETSCAPE2.0', 'ANIMEXTS1.0'].includes(frame.application.id));
-        const loop = application && 'application' in application ? application.application.blocks : undefined;
+        const application = gif.frames.find(
+          frame =>
+            'application' in frame && ['NETSCAPE2.0', 'ANIMEXTS1.0'].includes(frame.application.id)
+        );
+        const loop =
+          application && 'application' in application ? application.application.blocks : undefined;
         const repeat = loop?.[0] === 1 ? loop[1] | (loop[2] << 8) : -1;
         operation.syntheticGIF = new SyntheticGIF({
           commonCropOptions,
           repeat,
           gifJsOptions: options.gifJsOptions,
-          signal: controller.signal,
+          signal: controller.signal
         });
         const encoder = operation.syntheticGIF.gif;
         await operation.frameCropper.cropGif(gif, controller.signal, (frame, delay) => {
-          encoder.addFrame(frame, {delay, copy: false});
+          encoder.addFrame(frame, { delay, copy: false });
           encoder.frames[encoder.frames.length - 1].delay = delay;
         });
         operation.frameCropper.destroy();
@@ -226,26 +274,32 @@ export class SuperImageCropper {
         blob = await operation.syntheticGIF.bootstrap();
       } else if (operation.webp) {
         operation.webpEncoder = new WebPEncoder(controller.signal);
-        const frames: {bytes: Uint8Array; duration: number}[] = [];
-        await operation.frameCropper.cropWebP(operation.webp, controller.signal, async (frame, duration) => {
-          frames.push({bytes: await operation.webpEncoder!.encode(frame), duration});
-        });
+        const frames: { bytes: Uint8Array; duration: number }[] = [];
+        await operation.frameCropper.cropWebP(
+          operation.webp,
+          controller.signal,
+          async (frame, duration) => {
+            frames.push({ bytes: await operation.webpEncoder!.encode(frame), duration });
+          }
+        );
         blob = operation.webp.createBlob(frames, outputWidth, outputHeight);
       } else {
-        operation.frameCropper.cropStaticImage(operation.image!);
+        operation.frameCropper.transformFrame(operation.image!);
         const canvas = operation.frameCropper.outputCanvas;
         blob = await new Promise<Blob>((resolve, reject) => {
-          const onAbort = () => reject(new DOMException('The image operation was aborted.', 'AbortError'));
-          controller.signal.addEventListener('abort', onAbort, {once: true});
+          const onAbort = () =>
+            reject(new DOMException('The image operation was aborted.', 'AbortError'));
+          controller.signal.addEventListener('abort', onAbort, { once: true });
           canvas.toBlob(result => {
             controller.signal.removeEventListener('abort', onAbort);
             if (controller.signal.aborted) onAbort();
             else if (result) resolve(result);
             else reject(new Error('The cropped image could not be encoded.'));
-          }, imageType?.mime || sourceBlob.type || 'image/png');
+          }, sourceType?.mime || sourceBlob.type || 'image/png');
         });
       }
-      if (controller.signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+      if (controller.signal.aborted)
+        throw new DOMException('The image operation was aborted.', 'AbortError');
 
       if (options.outputType === OutputType.BLOB) return blob;
       if (options.outputType === OutputType.BASE64) {
@@ -254,8 +308,9 @@ export class SuperImageCropper {
           const reader = operation.reader!;
           reader.onload = () => resolve(reader.result as string);
           reader.onerror = () => reject(reader.error);
-          reader.onabort = () => reject(new DOMException('The image operation was aborted.', 'AbortError'));
-          controller.signal.addEventListener('abort', () => reader.abort(), {once: true});
+          reader.onabort = () =>
+            reject(new DOMException('The image operation was aborted.', 'AbortError'));
+          controller.signal.addEventListener('abort', () => reader.abort(), { once: true });
           reader.readAsDataURL(blob);
         });
       }
@@ -285,7 +340,12 @@ export class SuperImageCropper {
     operation.frameCropper?.destroy();
     operation.decoder?.destroy();
     operation.image?.close();
-    operation.reader = operation.syntheticGIF = operation.frameCropper = operation.decoder = operation.image = undefined;
+    operation.reader =
+      operation.syntheticGIF =
+      operation.frameCropper =
+      operation.decoder =
+      operation.image =
+        undefined;
     operation.webpEncoder = operation.webp = undefined;
   }
 }

@@ -1,235 +1,84 @@
 # Contributing to Super Image Cropper
 
-Thank you for your interest in contributing to Super Image Cropper! We welcome contributions from the community and are grateful for your help in making this project better.
+The `ris` branch contains the maintained fork. Keep `master` aligned with upstream and propose fork changes against `ris`.
 
-## 🚀 Getting Started
+## Development setup
 
-### Prerequisites
+Install [mise](https://mise.jdx.dev/) and Git, then clone the fork and install the Node.js version declared in `mise.toml`:
 
-- Node.js (version 16 or higher)
-- pnpm (recommended package manager)
-- Git
-
-### Development Setup
-
-1. **Fork the repository**
-   ```bash
-   # Fork the repo on GitHub, then clone your fork
-   git clone https://github.com/YOUR_USERNAME/super-image-cropper.git
-   cd super-image-cropper
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pnpm install
-   ```
-
-3. **Build the project**
-   ```bash
-   pnpm build
-   ```
-
-4. **Run the example**
-   ```bash
-   cd example/crop-gif-with-cropper
-   pnpm install
-   pnpm dev
-   ```
-
-## 📁 Project Structure
-
+```sh
+git clone --branch ris https://github.com/RisPNG/super-image-cropper.git
+cd super-image-cropper
+mise install
+mise exec -- npm ci
 ```
+
+Use the root npm workspace commands and `package-lock.json` for dependency changes.
+
+## Project structure
+
+```text
 super-image-cropper/
-├── packages/
-│   ├── super-image-cropper/     # Main library package
-│   │   ├── src/
-│   │   │   ├── index.ts         # Main entry point
-│   │   │   ├── lib/             # Core library files
-│   │   │   └── utils/           # Utility functions
-│   │   └── package.json
-│   └── gif-worker-js/           # GIF processing worker
-│       ├── src/
-│       └── package.json
-├── example/                     # Example applications
-├── docs/                        # Documentation
-├── scripts/                     # Build and release scripts
-└── build/                       # Build configuration
+|-- packages/
+|   |-- super-image-cropper/    Main processor package
+|   `-- gif-worker-js/          GIF encoding worker
+|-- build/                     Shared build configuration
+|-- docs/                      Documentation
+`-- scripts/                   Release utilities
 ```
 
-## 🛠️ Development Workflow
+## Making changes
 
-### Making Changes
+Follow the existing implementation and keep shared image transforms in the processor's rendering pipeline. Update the English and Chinese documentation when behaviour or the public API changes. Keep usage snippets focused on the library API.
 
-1. **Create a new branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   # or
-   git checkout -b fix/your-bug-fix
-   ```
+Run the canonical checks from the repository root:
 
-2. **Make your changes**
-   - Follow the existing code style
-   - Update documentation if needed
-
-3. **Test your changes**
-   ```bash
-   # Run linting
-   pnpm lint
-   
-   # Fix linting issues
-   pnpm lint:fix
-   
-   # Format code
-   pnpm format:fix
-   
-   # Build the project
-   pnpm build
-   ```
-
-4. **Commit your changes**
-   ```bash
-   # Use conventional commits
-   pnpm commit
-   ```
-
-5. **Push and create a Pull Request**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-### Commit Convention
-
-We use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages:
-
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `style:` - Code style changes (formatting, etc.)
-- `refactor:` - Code refactoring
-- `test:` - Adding or updating tests
-- `chore:` - Maintenance tasks
-
-Examples:
-```bash
-feat: add support for WebP format
-fix: resolve memory leak in GIF processing
-docs: update API documentation
+```sh
+mise exec -- npm test
+mise exec -- npm run check
+mise exec -- npm run lint
 ```
 
+`npm test` builds the packages before running the worker, processor, and release tests, including real WebP encoding. `npm run check` verifies both packages and the release scripts. The lint command reports source issues without changing files.
 
-## 📝 Documentation
+Use `mise exec -- npm run build` for a build without tests. Apply formatting with `mise exec -- npm run format:fix` when needed.
 
-### Updating Documentation
+## Commit messages and pull requests
 
-- Update the main README.md for API changes
-- Update the Chinese documentation in `docs/README_zh.md`
-- Add JSDoc comments for new public APIs
-- Update examples if the API changes
+Write a concise, single-line, lowercase imperative subject without a Conventional Commit prefix or trailing full stop:
 
-### Documentation Standards
-
-- Use clear, concise language
-- Provide code examples for new features
-- Include both TypeScript and JavaScript examples when relevant
-- Keep the Chinese and English documentation in sync
-
-## 🐛 Reporting Issues
-
-### Before Reporting
-
-1. Check if the issue already exists
-2. Try to reproduce the issue with the latest version
-3. Prepare a minimal reproduction case
-
-### Issue Template
-
-When reporting bugs, please include:
-
-- **Environment**: Browser, Node.js version, package version
-- **Steps to reproduce**: Clear, step-by-step instructions
-- **Expected behavior**: What should happen
-- **Actual behavior**: What actually happens
-- **Code sample**: Minimal reproduction case
-- **Screenshots**: If applicable
-
-## 🔄 Pull Request Process
-
-### Before Submitting
-
-- [ ] Code follows the project's style guidelines
-- [ ] Documentation is updated
-- [ ] Commit messages follow conventional format
-- [ ] Branch is up to date with main
-
-### PR Guidelines
-
-1. **Title**: Use a clear, descriptive title
-2. **Description**: Explain what changes were made and why
-3. **Breaking Changes**: Clearly mark any breaking changes
-4. **Testing**: Describe how the changes were tested
-5. **Screenshots**: Include screenshots for UI changes
-
-### Review Process
-
-1. Automated checks must pass (CI/CD)
-2. At least one maintainer review is required
-3. All feedback must be addressed
-4. Squash and merge is preferred
-
-## 🏷️ Release Process
-
-Releases are handled by maintainers using automated scripts:
-
-```bash
-# Create a new release
-pnpm release
+```text
+preserve animated webp when cropping images
+fix transparent pixels in gif exports
+update cropper usage examples
 ```
 
-This will:
-- Bump version numbers
-- Generate changelog
-- Create git tags
-- Publish to npm
+Keep the subject alone for self-explanatory changes. When a body is needed, follow the subject with exactly one blank line, explain the existing problem and why the change resolves it, and do not hard-wrap. Have commit messages reviewed before pushing commits to a remote.
 
-## 🤝 Community Guidelines
+Describe the problem, the resulting behaviour, and the checks that ran in the pull request. Call out breaking changes and any verification limits. For bug reports, include the package and browser versions, reproduction steps, expected behaviour, actual behaviour, and a minimal code sample.
 
-### Code of Conduct
+## Releases
 
-- Be respectful and inclusive
-- Welcome newcomers and help them learn
-- Focus on constructive feedback
-- Respect different opinions and approaches
+Preview a release from the repository root:
 
-### Getting Help
+```sh
+mise exec -- npm run release -- --dry-run
+```
 
-- **GitHub Discussions**: For general questions and discussions
-- **GitHub Issues**: For bug reports and feature requests
-- **Discord/Slack**: (if available) For real-time chat
+Run an interactive release with:
 
-## 🎯 Areas for Contribution
+```sh
+mise exec -- npm run release
+```
 
-We especially welcome contributions in these areas:
+The release command selects the package and version, builds and checks the packages, and asks before Git changes or npm publication. Review the proposed commit message before any remote push. Declining Git changes skips the commit, tag, and push steps.
 
-- **Performance improvements**: Optimize image processing algorithms
-- **New formats**: Add support for additional image formats
-- **Browser compatibility**: Improve support for older browsers
-- **Documentation**: Improve examples and guides
-- **Accessibility**: Make the library more accessible
+To resume a partially completed release, select the current version or supply the same package and exact version:
 
-## 📋 Checklist for Contributors
+```sh
+mise exec -- npm run release -- --project super-image-cropper --version 1.0.27
+```
 
-- [ ] I have read and understood the contributing guidelines
-- [ ] I have set up the development environment
-- [ ] I have created a feature branch for my changes
-- [ ] I have updated documentation as needed
-- [ ] I have followed the commit message convention
-- [ ] I have verified my changes work correctly
+The command recognises an existing matching tag and published version, so completed release steps are not repeated.
 
-## 🙏 Recognition
-
-Contributors will be:
-- Listed in the project's contributors section
-- Mentioned in release notes for significant contributions
-- Invited to join the maintainers team for sustained contributions
-
-Thank you for contributing to Super Image Cropper! 🎉
+Releasing the GIF worker also updates the processor's dependency pin and the lockfile. The processor's package version stays unchanged until its own release.

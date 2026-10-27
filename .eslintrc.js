@@ -17,5 +17,12 @@ module.exports = {
   rules: {
     'no-unused-vars': [1, { varsIgnorePattern: '.*', args: 'none' }]
   },
-  overrides: []
+  overrides: [
+    {
+      files: ['**/*.ts'],
+      rules: {
+        'no-undef': 'off'
+      }
+    }
+  ]
 };

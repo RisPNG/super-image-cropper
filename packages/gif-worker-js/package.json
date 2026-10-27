@@ -29,6 +29,7 @@
   "scripts": {
     "build": "rollup -c",
     "clean": "rimraf dist esm",
+    "check": "tsc --noEmit",
     "dev": "tsc --watch",
     "prebuild": "npm run clean",
     "prepack": "npm run build"

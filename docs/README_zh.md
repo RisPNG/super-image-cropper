@@ -10,7 +10,7 @@
 
 [![npm version](https://img.shields.io/npm/v/super-image-cropper)](https://www.npmjs.com/package/super-image-cropper) [![npm downloads](https://img.shields.io/npm/dw/super-image-cropper)](https://www.npmjs.com/package/super-image-cropper) [![GitHub license](https://img.shields.io/github/license/STDSuperman/super-image-cropper)](https://github.com/STDSuperman/super-image-cropper/blob/master/LICENSE) [![GitHub stars](https://img.shields.io/github/stars/STDSuperman/super-image-cropper)](https://github.com/STDSuperman/super-image-cropper/stargazers) [![GitHub issues](https://img.shields.io/github/issues/STDSuperman/super-image-cropper)](https://github.com/STDSuperman/super-image-cropper/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-[🌟 在线演示](https://gif-cropper-stdsuperman.vercel.app/) | [📖 文档](#文档) | [🇺🇸 English](../README.md)
+[API参考](#-api参考) | [🇺🇸 English](../README.md)
 
 </div>
 
@@ -24,19 +24,6 @@
 - 🎯 **精确控制** - 对裁剪参数进行细粒度控制
 - 📱 **跨平台** - 在所有现代浏览器中工作
 - 🔄 **变换支持** - 支持旋转和缩放变换
-
-## 🎯 在线体验
-
-- **[在线演示](https://gif-cropper-stdsuperman.vercel.app/)** - 在浏览器中试用
-- **[CodeSandbox](https://codesandbox.io/p/github/STDSuperman/codesandbox-super-image-cropper/master?workspaceId=6d860bca-a1bd-4c35-9131-07f0c5450764)** - 与CropperJS的交互式示例
-
-### 预览
-
-#### GIF动画裁剪
-<img src="https://blog-images-1257398419.cos.ap-nanjing.myqcloud.com/github/gif-transparent.png" width="657" alt="GIF裁剪预览">
-
-#### 静态图像裁剪
-<img src="https://s4.ax1x.com/2022/02/23/bPUoIf.png" width="657" alt="静态图像裁剪预览">
 
 ## 🚀 快速开始
 
@@ -172,10 +159,6 @@ imageCropper.crop({
 
 ## 🔧 示例
 
-### React集成
-
-查看我们的[React示例](../example/crop-gif-with-cropper)，了解与React和CropperJS的完整实现。
-
 ### 高级用法
 
 ```typescript
@@ -227,7 +210,6 @@ super-image-cropper/
 ├── packages/
 │   ├── super-image-cropper/    # 主库
 │   └── gif-worker-js/          # GIF处理worker
-├── example/                    # 示例应用
 ├── docs/                       # 文档
 └── scripts/                    # 构建和发布脚本
 ```

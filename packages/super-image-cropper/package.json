@@ -34,7 +34,6 @@
     "photo-editor",
     "web-components"
   ],
-  "homepage": "https://gif-cropper-stdsuperman.vercel.app/",
   "bugs": {
     "url": "https://github.com/STDSuperman/super-image-cropper/issues"
   },
@@ -69,15 +68,12 @@
     "prebuild": "npm run clean",
     "build": "rollup -c",
     "dev": "tsc --watch",
-    "check": "tsc --noEmit",
-    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s"
+    "check": "tsc --noEmit"
   },
   "devDependencies": {
     "@jsquash/webp": "1.5.0",
     "@types/gif.js": "^0.2.2",
-    "@types/minimist": "^1.2.2",
-    "conventional-changelog-cli": "^2.2.2",
-    "esbuild": "^0.14.23",
+    "esbuild": "0.28.2",
     "eslint": "^7.32.0",
     "eslint-plugin-import": "^2.24.2",
     "prettier": "^2.3.2",
@@ -86,7 +82,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "cropperjs": ">=1.6.2",
+    "cropperjs": "^2.3.0",
     "gif-build-worker-js": "1.0.3",
     "gif.js": "^0.2.0",
     "gifuct-js": "^2.1.2",

@@ -152,7 +152,6 @@ async function moduleURL(path, imports = []) {
   const compiled = await transform(source, {loader: 'ts', format: 'esm', target: 'es2020'});
   return 'data:text/javascript;base64,' + Buffer.from(compiled.code).toString('base64');
 }
-const helper = await moduleURL('../src/lib/helper.ts', [["import imageType from 'image-type'", 'const imageType = globalThis.__imageType']]);
 const decoder = await moduleURL('../src/lib/decoder.ts', [["import { parseGIF } from 'gifuct-js';", 'const {parseGIF} = globalThis.__gifuct;']]);
 const cropper = await moduleURL('../src/lib/cropper.ts', [["import { decompressFrame } from 'gifuct-js';", 'const {decompressFrame} = globalThis.__gifuct;']]);
 const synthetic = await moduleURL('../src/lib/synthetic-gif.ts', [
@@ -167,7 +166,7 @@ const processor = await moduleURL('../src/index.ts', [
   ["'./lib/decoder'", JSON.stringify(decoder)],
   ["'./lib/cropper'", JSON.stringify(cropper)],
   ["'./lib/synthetic-gif'", JSON.stringify(synthetic)],
-  ["'./lib/helper'", JSON.stringify(helper)],
+  ["import imageType from 'image-type';", 'const imageType = globalThis.__imageType;'],
   ["'./lib/webp'", JSON.stringify(webp)],
   ["'./lib/webp-encoder'", JSON.stringify(webpEncoder)],
 ]);
@@ -313,7 +312,7 @@ test('rotation, flip, cropping, and independent dimensions apply to every GIF an
     assert.deepEqual(corners, index === 0 ? [yellow, green, blue, red] : [red, blue, green, yellow]);
   }
   crop.init({commonCropOptions: cropOptions(2, 2, {x: 1, width: 1}, 2, 4)});
-  const frame = crop.cropStaticImage({width: 2, height: 2, pixels: new Uint8ClampedArray([red, green, blue, yellow].flat())});
+  const frame = crop.transformFrame({width: 2, height: 2, pixels: new Uint8ClampedArray([red, green, blue, yellow].flat())});
   assert.deepEqual(Array.from(frame.data), [green, green, green, green, yellow, yellow, yellow, yellow].flat());
   crop.destroy();
 });

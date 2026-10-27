@@ -10,7 +10,7 @@ A powerful JavaScript image cropping library that supports GIF animations, PNG, 
 
 [![npm version](https://img.shields.io/npm/v/super-image-cropper)](https://www.npmjs.com/package/super-image-cropper) [![npm downloads](https://img.shields.io/npm/dw/super-image-cropper)](https://www.npmjs.com/package/super-image-cropper) [![GitHub license](https://img.shields.io/github/license/STDSuperman/super-image-cropper)](https://github.com/STDSuperman/super-image-cropper/blob/master/LICENSE) [![GitHub stars](https://img.shields.io/github/stars/STDSuperman/super-image-cropper)](https://github.com/STDSuperman/super-image-cropper/stargazers) [![GitHub issues](https://img.shields.io/github/issues/STDSuperman/super-image-cropper)](https://github.com/STDSuperman/super-image-cropper/issues) [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-[🌟 Live Demo](https://gif-cropper-stdsuperman.vercel.app/) | [📖 Documentation](#documentation) | [🇨🇳 中文文档](./docs/README_zh.md)
+[API Reference](#-api-reference) | [🇨🇳 中文文档](./docs/README_zh.md)
 
 </div>
 
@@ -24,19 +24,6 @@ A powerful JavaScript image cropping library that supports GIF animations, PNG, 
 - 🎯 **Precise Control** - Fine-grained control over cropping parameters
 - 📱 **Cross-Platform** - Works in all modern browsers
 - 🔄 **Transform Support** - Rotation and scaling transformations
-
-## 🎯 Live Demo
-
-- **[Online Demo](https://gif-cropper-stdsuperman.vercel.app/)** - Try it out in your browser
-- **[CodeSandbox](https://codesandbox.io/p/github/STDSuperman/codesandbox-super-image-cropper/master?workspaceId=6d860bca-a1bd-4c35-9131-07f0c5450764)** - Interactive example with CropperJS
-
-### Preview
-
-#### GIF Animation Cropping
-<img src="https://blog-images-1257398419.cos.ap-nanjing.myqcloud.com/github/gif-transparent.png" width="657" alt="GIF Cropping Preview">
-
-#### Static Image Cropping
-<img src="https://s4.ax1x.com/2022/02/23/bPUoIf.png" width="657" alt="Static Image Cropping Preview">
 
 ## Fork development
 
@@ -208,10 +195,6 @@ Provide either `cropperInstance` or `cropperJsOpts`. Manual cropping requires `s
 
 ## 🔧 Examples
 
-### React Integration
-
-Check out our [React example](./example/crop-gif-with-cropper) for a complete implementation with React and CropperJS.
-
 ### Advanced Usage
 
 ```typescript
@@ -263,7 +246,6 @@ super-image-cropper/
 ├── packages/
 │   ├── super-image-cropper/    # Main library
 │   └── gif-worker-js/          # GIF processing worker
-├── example/                    # Example applications
 ├── docs/                       # Documentation
 └── scripts/                    # Build and release scripts
 ```
