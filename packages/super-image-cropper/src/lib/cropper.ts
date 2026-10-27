@@ -1,6 +1,7 @@
 import { decompressFrame } from 'gifuct-js';
 import type { ParsedGif, ParsedFrame } from 'gifuct-js';
 import type { ICommonCropOptions } from '../index';
+import type { WebPAnimation, WebPFrame } from './webp';
 
 export interface IFrameCropperProps {
   commonCropOptions: ICommonCropOptions;
@@ -84,6 +85,26 @@ export class FrameCropper {
 
   public cropStaticImage(image: CanvasImageSource): ImageData {
     return this.transformFrame(image);
+  }
+
+  public async cropWebP(animation: WebPAnimation, signal: AbortSignal, onFrame: (frame: ImageData, duration: number) => Promise<void>): Promise<void> {
+    this.compositeContext.clearRect(0, 0, animation.width, animation.height);
+    let previous: WebPFrame | undefined;
+    for (const frame of animation.frames) {
+      if (signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+      if (previous?.dispose) this.compositeContext.clearRect(previous.x, previous.y, previous.width, previous.height);
+      const image = await createImageBitmap(frame.blob);
+      try {
+        if (signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
+        if (!frame.blend) this.compositeContext.clearRect(frame.x, frame.y, frame.width, frame.height);
+        this.compositeContext.drawImage(image, frame.x, frame.y);
+        await onFrame(this.transformFrame(this.compositeCanvas), frame.duration);
+      } finally {
+        image.close();
+      }
+      previous = frame;
+    }
+    if (signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
   }
 
   private transformFrame(image: CanvasImageSource): ImageData {

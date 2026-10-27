@@ -4,6 +4,8 @@ import { Decoder } from './lib/decoder';
 import { SyntheticGIF } from './lib/synthetic-gif';
 import { FrameCropper } from './lib/cropper';
 import { getImageType } from './lib/helper';
+import { WebPAnimation } from './lib/webp';
+import { WebPEncoder } from './lib/webp-encoder';
 
 export interface CustomCropper {
   url?: string;
@@ -82,6 +84,8 @@ interface CropOperation {
   frameCropper?: FrameCropper;
   decoder?: Decoder;
   syntheticGIF?: SyntheticGIF;
+  webp?: WebPAnimation;
+  webpEncoder?: WebPEncoder;
   image?: ImageBitmap;
   reader?: FileReader;
 }
@@ -124,6 +128,7 @@ export class SuperImageCropper {
       if (controller.signal.aborted) throw new DOMException('The image operation was aborted.', 'AbortError');
 
       const isGIF = imageType?.mime === 'image/gif';
+      operation.webp = imageType?.mime === 'image/webp' ? WebPAnimation.decode(bytes) : undefined;
       let width: number;
       let height: number;
       let gif: ParsedGif | undefined;
@@ -132,6 +137,9 @@ export class SuperImageCropper {
         gif = operation.decoder.decode();
         width = gif.lsd.width;
         height = gif.lsd.height;
+      } else if (operation.webp) {
+        width = operation.webp.width;
+        height = operation.webp.height;
       } else {
         let rasterBlob = sourceBlob;
         if (imageType?.mime === 'image/jpeg' && legacyCropper?.url !== src && legacyCropper?.url?.startsWith('data:image/jpeg;')) {
@@ -216,6 +224,13 @@ export class SuperImageCropper {
         operation.decoder!.destroy();
         operation.decoder = undefined;
         blob = await operation.syntheticGIF.bootstrap();
+      } else if (operation.webp) {
+        operation.webpEncoder = new WebPEncoder(controller.signal);
+        const frames: {bytes: Uint8Array; duration: number}[] = [];
+        await operation.frameCropper.cropWebP(operation.webp, controller.signal, async (frame, duration) => {
+          frames.push({bytes: await operation.webpEncoder!.encode(frame), duration});
+        });
+        blob = operation.webp.createBlob(frames, outputWidth, outputHeight);
       } else {
         operation.frameCropper.cropStaticImage(operation.image!);
         const canvas = operation.frameCropper.outputCanvas;
@@ -265,9 +280,12 @@ export class SuperImageCropper {
     operation.sourceSignal?.removeEventListener('abort', operation.onAbort);
     operation.reader?.abort();
     operation.syntheticGIF?.destroy();
+    operation.webpEncoder?.destroy();
+    if (operation.webp) operation.webp.frames.length = 0;
     operation.frameCropper?.destroy();
     operation.decoder?.destroy();
     operation.image?.close();
     operation.reader = operation.syntheticGIF = operation.frameCropper = operation.decoder = operation.image = undefined;
+    operation.webpEncoder = operation.webp = undefined;
   }
 }

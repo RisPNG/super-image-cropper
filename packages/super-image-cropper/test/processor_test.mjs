@@ -2,8 +2,10 @@ import test, {after} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
 import {runInNewContext} from 'node:vm';
-import {transform} from 'esbuild';
+import {build, transform} from 'esbuild';
+import createWebPDecoder from '@jsquash/webp/codec/dec/webp_dec.js';
 
 const require = createRequire(import.meta.url);
 const original = Object.fromEntries(['document', 'navigator', 'ImageData', 'Worker', 'createImageBitmap', 'fetch'].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -14,6 +16,17 @@ globalThis.__gifuct = require('gifuct-js');
 globalThis.__GIF = require('gif.js/dist/gif.js');
 globalThis.__imageType = require('image-type');
 const {default: workerSource} = await import('../../gif-worker-js/src/lib/gif.worker.js');
+const compiledWebPWorker = await build({
+  entryPoints: [fileURLToPath(new URL('../src/lib/webp.worker.ts', import.meta.url))],
+  bundle: true,
+  write: false,
+  platform: 'browser',
+  format: 'iife',
+  target: 'es2020',
+  loader: {'.wasm': 'binary'},
+  define: {'import.meta': '{}'},
+});
+globalThis.__webpWorkerSource = compiledWebPWorker.outputFiles[0].text;
 const canvases = [];
 const workers = [];
 const urls = [];
@@ -63,7 +76,9 @@ class RasterContext {
     for (let y = top; y < top + height; y++) for (let x = left; x < left + width; x++) this.canvas.pixels.fill(0, (y * this.canvas.width + x) * 4, (y * this.canvas.width + x) * 4 + 4);
   }
   fillRect(left, top, width, height) {
-    const color = this.fillStyle.match(/\d+/g).map(Number).concat(255);
+    const color = this.fillStyle.match(/[\d.]+/g).map(Number);
+    if (color.length === 3) color.push(255);
+    else color[3] = Math.round(color[3] * 255);
     for (let y = top; y < top + height; y++) for (let x = left; x < left + width; x++) this.canvas.pixels.set(color, (y * this.canvas.width + x) * 4);
   }
   createImageData(width, height) { return new ImageData(new Uint8ClampedArray(width * height * 4), width, height); }
@@ -89,7 +104,15 @@ class RasterContext {
       const sy = Math.floor((-b * (x + 0.5 - e) + a * (y + 0.5 - f)) / determinant - top);
       if (sx < 0 || sy < 0 || sx >= image.width || sy >= image.height) continue;
       const offset = (sy * image.width + sx) * 4;
-      if (image.pixels[offset + 3]) this.canvas.pixels.set(image.pixels.subarray(offset, offset + 4), (y * this.canvas.width + x) * 4);
+      const destination = (y * this.canvas.width + x) * 4;
+      const alpha = image.pixels[offset + 3] / 255;
+      const previousAlpha = this.canvas.pixels[destination + 3] / 255;
+      const resultAlpha = alpha + previousAlpha * (1 - alpha);
+      if (!alpha) continue;
+      for (let channel = 0; channel < 3; channel++) {
+        this.canvas.pixels[destination + channel] = (image.pixels[offset + channel] * alpha + this.canvas.pixels[destination + channel] * previousAlpha * (1 - alpha)) / resultAlpha;
+      }
+      this.canvas.pixels[destination + 3] = resultAlpha * 255;
     }
   }
 }
@@ -100,13 +123,24 @@ class TestWorker {
   constructor(url) {
     this.url = url;
     workers.push(this);
-    this.scope = {self: {postMessage: data => queueMicrotask(() => { if (!this.terminated) this.onmessage({data: structuredClone(data)}); })}};
-    runInNewContext(workerSource, this.scope);
+    this.scope = {
+      self: {
+        location: {href: url},
+        addEventListener: (_type, listener) => { this.receive = listener; },
+        postMessage: data => queueMicrotask(() => { if (!this.terminated) this.onmessage({data: structuredClone(data)}); }),
+      },
+      WebAssembly, ArrayBuffer, Uint8Array, Uint8ClampedArray, Int8Array, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array, BigInt64Array, BigUint64Array, TextDecoder, TextEncoder, URL, console, setTimeout, clearTimeout, importScripts() {},
+    };
+    this.ready = urls.find(entry => entry.url === url).blob.text().then(source => {
+      if (!this.terminated) runInNewContext(source, this.scope);
+    });
   }
   postMessage(task) {
     this.inputTask = structuredClone(task);
     this.task = structuredClone(task);
-    if (!TestWorker.hold) this.scope.self.onmessage({data: this.task});
+    if (!TestWorker.hold) this.ready.then(() => {
+      if (!this.terminated) return (this.receive || this.scope.self.onmessage)({data: this.task});
+    }).catch(error => this.onerror?.(error));
   }
   terminate() { this.terminated = true; }
 }
@@ -125,15 +159,28 @@ const synthetic = await moduleURL('../src/lib/synthetic-gif.ts', [
   ["import { transformToUrl as gifWorkerTransformToUrl } from 'gif-build-worker-js';", 'const gifWorkerTransformToUrl = globalThis.__workerUrl;'],
   ["import GIF from 'gif.js';", 'const GIF = globalThis.__GIF;'],
 ]);
+const webp = await moduleURL('../src/lib/webp.ts');
+const webpEncoder = await moduleURL('../src/lib/webp-encoder.ts', [
+  ["import workerSource from './webp.worker?worker';", 'const workerSource = globalThis.__webpWorkerSource;'],
+]);
 const processor = await moduleURL('../src/index.ts', [
   ["'./lib/decoder'", JSON.stringify(decoder)],
   ["'./lib/cropper'", JSON.stringify(cropper)],
   ["'./lib/synthetic-gif'", JSON.stringify(synthetic)],
   ["'./lib/helper'", JSON.stringify(helper)],
+  ["'./lib/webp'", JSON.stringify(webp)],
+  ["'./lib/webp-encoder'", JSON.stringify(webpEncoder)],
 ]);
 const {SuperImageCropper} = await import(processor);
 const {FrameCropper} = await import(cropper);
 const {Decoder} = await import(decoder);
+const {WebPAnimation} = await import(webp);
+const {WebPEncoder} = await import(webpEncoder);
+const webpDecoder = await createWebPDecoder({
+  wasmBinary: await readFile(require.resolve('@jsquash/webp/codec/dec/webp_dec.wasm')),
+  noInitialRun: true,
+  locateFile: path => path,
+});
 const {parseGIF, decompressFrame} = globalThis.__gifuct;
 const LZWEncoder = require('gif.js/src/LZWEncoder.js');
 const red = [255, 0, 0, 255];
@@ -173,6 +220,40 @@ function cropOptions(width, height, changes = {}, outputWidth = width, outputHei
     outputHeight,
   };
 }
+
+async function webpFixture(frames, loop = 3) {
+  const encoder = new WebPEncoder(new AbortController().signal);
+  const chunks = [
+    ['VP8X', Buffer.from([18, 0, 0, 0, 2, 0, 0, 0, 0, 0])],
+    ['ANIM', Buffer.from([0, 0, 0, 0, loop & 255, loop >>> 8])],
+  ];
+  try {
+    for (const frame of frames) {
+      const bytes = await encoder.encode(new ImageData(new Uint8ClampedArray(frame.pixels.flat()), frame.width, 1));
+      const header = Buffer.alloc(16);
+      header.writeUIntLE((frame.x || 0) / 2, 0, 3);
+      header.writeUIntLE(frame.width - 1, 6, 3);
+      header.writeUIntLE(frame.duration, 12, 3);
+      header[15] = (frame.blend ? 0 : 2) | (frame.dispose ? 1 : 0);
+      chunks.push(['ANMF', Buffer.concat([header, bytes.subarray(12)])]);
+    }
+  } finally {
+    encoder.destroy();
+  }
+  const payload = Buffer.concat(chunks.map(([type, data]) => {
+    const chunk = Buffer.alloc(8 + data.length + (data.length % 2));
+    chunk.write(type, 0);
+    chunk.writeUInt32LE(data.length, 4);
+    data.copy(chunk, 8);
+    return chunk;
+  }));
+  const header = Buffer.alloc(12);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(payload.length + 4, 4);
+  header.write('WEBP', 8);
+  return new Blob([header, payload], {type: 'image/webp'});
+}
+
 const settled = () => new Promise(resolve => setImmediate(resolve));
 after(() => {
   for (const [name, descriptor] of Object.entries(original)) {
@@ -181,7 +262,7 @@ after(() => {
   }
   URL.createObjectURL = originalCreate;
   URL.revokeObjectURL = originalRevoke;
-  for (const name of ['__gifuct', '__GIF', '__imageType', '__workerUrl']) delete globalThis[name];
+  for (const name of ['__gifuct', '__GIF', '__imageType', '__workerUrl', '__webpWorkerSource']) delete globalThis[name];
 });
 
 test('GIF composition applies the preceding disposal rectangle and restores disposal 3 while preserving raw zero delays', async () => {
@@ -277,6 +358,74 @@ test('the full GIF pipeline preserves finite and absent loops, zero delays, exac
     assert.equal(revoked.includes('blob:original'), false);
     crop.destroy();
   }
+});
+
+test('animated WebP exports every composited frame with timing, loops, transparency, and exact output dimensions', {timeout: 10000}, async () => {
+  const source = await webpFixture([
+    {width: 3, pixels: [red, clear, black], duration: 0},
+    {width: 1, pixels: [[0, 255, 0, 128]], duration: 73, blend: true, dispose: true},
+    {width: 1, x: 2, pixels: [blue], duration: 11},
+  ]);
+  globalThis.fetch = async () => ({ok: true, blob: async () => source});
+  let closed = 0;
+  let live = 0;
+  globalThis.createImageBitmap = async blob => {
+    const image = webpDecoder.decode(new Uint8Array(await blob.arrayBuffer()));
+    assert.equal(++live, 1);
+    return {width: image.width, height: image.height, pixels: image.data, close() { closed++; live--; }};
+  };
+  const crop = new SuperImageCropper();
+  const result = await crop.crop({src: 'blob:animated-webp', cropperJsOpts: {width: 3, height: 1}, outputWidth: 6, outputHeight: 2, outputType: 'blob'});
+  assert.equal(result.type, 'image/webp');
+  const animation = WebPAnimation.decode(await result.arrayBuffer());
+  assert.equal(animation.width, 6);
+  assert.equal(animation.height, 2);
+  assert.equal(animation.loop, 3);
+  assert.deepEqual(animation.frames.map(frame => frame.duration), [0, 73, 11]);
+  const expected = [
+    [red, red, clear, clear, black, black],
+    [[127, 128, 0, 255], [127, 128, 0, 255], clear, clear, black, black],
+    [clear, clear, clear, clear, blue, blue],
+  ];
+  for (const [index, frame] of animation.frames.entries()) {
+    const image = webpDecoder.decode(new Uint8Array(await frame.blob.arrayBuffer()));
+    assert.deepEqual(Array.from(image.data), [...expected[index], ...expected[index]].flat());
+  }
+  assert.equal(closed, 3);
+  assert.equal(live, 0);
+  assert.ok(workers.every(worker => worker.terminated));
+  assert.ok(canvases.every(canvas => canvas.width === 0 && canvas.height === 0));
+  assert.ok(urls.every(({url}) => revoked.includes(url)));
+  crop.destroy();
+});
+
+test('aborting a pending WebP export releases its current bitmap, worker, and canvas buffers', {timeout: 10000}, async t => {
+  const source = await webpFixture([
+    {width: 3, pixels: [red, clear, black], duration: 1},
+    {width: 3, pixels: [blue, green, red], duration: 2},
+  ]);
+  globalThis.fetch = async () => ({ok: true, blob: async () => source});
+  let decoded = 0;
+  let closed = 0;
+  globalThis.createImageBitmap = async blob => {
+    decoded++;
+    const image = webpDecoder.decode(new Uint8Array(await blob.arrayBuffer()));
+    return {width: image.width, height: image.height, pixels: image.data, close() { closed++; }};
+  };
+  TestWorker.hold = true;
+  t.after(() => { TestWorker.hold = false; });
+  const controller = new AbortController();
+  const crop = new SuperImageCropper();
+  t.after(() => crop.destroy());
+  const rejected = assert.rejects(crop.crop({src: 'blob:animated-webp', cropperJsOpts: {width: 3, height: 1}, signal: controller.signal, outputType: 'blob'}), {name: 'AbortError'});
+  while (!workers.some(worker => !worker.terminated && worker.task)) await settled();
+  controller.abort();
+  await rejected;
+  assert.equal(decoded, 1);
+  assert.equal(closed, 1);
+  assert.ok(workers.every(worker => worker.terminated));
+  assert.ok(canvases.every(canvas => canvas.width === 0 && canvas.height === 0));
+  assert.ok(urls.every(({url}) => revoked.includes(url)));
 });
 
 test('static preparation preserves explicit source and MIME with a Cropper instance and closes its decoded bitmap', async () => {

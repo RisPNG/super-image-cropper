@@ -22,6 +22,7 @@
     "test": "npm run build && node --test packages/*/test/*_test.mjs"
   },
   "devDependencies": {
+    "@jsquash/webp": "1.5.0",
     "@rollup/plugin-commonjs": "29.0.3",
     "@rollup/plugin-node-resolve": "16.0.3",
     "@types/fs-extra": "^9.0.13",

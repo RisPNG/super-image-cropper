@@ -42,7 +42,7 @@ A powerful JavaScript image cropping library that supports GIF animations, PNG, 
 
 The `ris` branch contains the maintained editor integration. Keep `master` aligned with `STDSuperman/super-image-cropper` without adding fork changes there. Upstream updates are reviewed before incorporating them into `ris`.
 
-The repository root is the installable `super-image-cropper` package. Its exports point directly to the existing processor package, and the build includes the fork's GIF worker. Install and verify the native npm workspaces with:
+The repository root is the installable `super-image-cropper` package. Its exports point directly to the existing processor package, and `npm run build` includes the GIF worker and the self-contained WebP encoding worker. Install and verify the native npm workspaces from the repository root with:
 
 ```sh
 mise install
@@ -51,9 +51,13 @@ mise exec -- npm test
 mise exec -- npm run check
 ```
 
+`npm test` builds the packages before running the worker, container, and processor checks, including real WebP encoding and animation export. The WebP worker bundles its baseline libwebp WebAssembly encoder from `@jsquash/webp`; consumers do not need separate WebAssembly assets, a CDN, or server-side image processing.
+
 The current integration uses native Cropper.js 2 elements. Pass the actual `Cropper` instance to `cropperInstance`; the processor reads its image transform matrix and selection rectangle. Existing Cropper.js 1 instances with `getData()` and manual `cropperJsOpts` use the same rendering pipeline. No replacement instance or wrapper is needed.
 
-`crop()` accepts `outputWidth` and `outputHeight` separately from the source crop rectangle, so a selected area can be resized to exact output dimensions. Omit both to retain the crop's source dimensions. It also accepts an `AbortSignal` through `signal`; aborting or calling `destroy()` cancels preparation and releases its canvases, workers, and generated URLs. The processor applies source GIF frame disposal while retaining animation delays, loop counts, and transparency. GIF encoding uses the fork's worker with a reserved transparent palette index, keeping opaque black separate from transparent pixels.
+`crop()` accepts `outputWidth` and `outputHeight` separately from the source crop rectangle, so a selected area can be resized to exact output dimensions. Omit both to retain the crop's source dimensions. GIF and animated WebP exports apply the same crop, rotation, flip, and resize to every frame while retaining frame durations, loop counts, and transparency. The processor composites source frames with their blending and disposal settings before applying the crop. GIF encoding uses the fork's worker with a reserved transparent palette index, keeping opaque black separate from transparent pixels. WebP encoding is lossless and prepares one frame at a time in its worker. PNG, JPEG, and still WebP retain the static image path.
+
+Pass an `AbortSignal` through `signal` to cancel preparation. Aborting or calling `destroy()` releases the active bitmaps, canvases, workers, and generated URLs, including the WebP encoder's WebAssembly memory. Applications with a Content Security Policy must permit Blob workers through `worker-src blob:` and WebAssembly compilation through `'wasm-unsafe-eval'` in `script-src` when that directive is set.
 
 Use `outputType: 'blob'` when preparing a file locally for later form submission. For example:
 
